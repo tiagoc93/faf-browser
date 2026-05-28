@@ -388,3 +388,99 @@ async fn test_checkbox() {
     let result = run(cli).await;
     assert!(result.is_ok(), "checkbox should succeed: {:?}", result);
 }
+
+// ---------------------------------------------------------------------------
+// T043 — Scroll e Navegação via JS
+// ---------------------------------------------------------------------------
+
+fn start_basic_server() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    thread::spawn(move || {
+        for _ in 0..5 {
+            let (mut stream, _) = match listener.accept() {
+                Ok(c) => c,
+                Err(_) => break,
+            };
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let body = "<html><body><h1>Scroll Test</h1><div id='target'>Target</div></body></html>";
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(), body
+            );
+            let _ = stream.write_all(response.as_bytes());
+        }
+    });
+    port
+}
+
+#[test]
+fn test_scroll_to() {
+    let port = start_basic_server();
+
+    let child = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            &format!("http://127.0.0.1:{}/", port),
+            "--no-scripts",
+            "--js",
+            "window.scrollTo(0, 500); window.pageYOffset",
+        ])
+        .current_dir("/home/hermes/faf-browser")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn cargo run");
+
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        output.status.success(),
+        "scrollTo should exit successfully. stdout: {}, stderr: {}",
+        stdout, stderr
+    );
+    assert!(
+        stdout.contains("500"),
+        "expected pageYOffset=500 in stdout, got: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_scroll_by() {
+    let port = start_basic_server();
+
+    let child = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            &format!("http://127.0.0.1:{}/", port),
+            "--no-scripts",
+            "--js",
+            "window.scrollBy(0, 200); window.scrollY",
+        ])
+        .current_dir("/home/hermes/faf-browser")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn cargo run");
+
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        output.status.success(),
+        "scrollBy should exit successfully. stdout: {}, stderr: {}",
+        stdout, stderr
+    );
+    assert!(
+        stdout.contains("200"),
+        "expected scrollY=200 in stdout, got: {}",
+        stdout
+    );
+}

@@ -197,6 +197,12 @@ pub fn inject_dom(ctx: &Ctx<'_>, doc: &HtmlDocument) -> Result<()> {
                     };
                 }
 
+                if (!el.scrollIntoView) {
+                    el.scrollIntoView = function(opts) {
+                        window.lastScrolledElement = this;
+                    };
+                }
+
                 return el;
             }
 
@@ -212,6 +218,45 @@ pub fn inject_dom(ctx: &Ctx<'_>, doc: &HtmlDocument) -> Result<()> {
                     enhance(arr[i]);
                 }
                 return arr;
+            };
+        })();
+        "#,
+    )?;
+
+    // Polyfill: window scroll methods (scrollTo, scrollBy, scrollY, pageYOffset)
+    let _: () = ctx.eval(
+        r#"
+        (function() {
+            if (typeof window === 'undefined') { globalThis.window = {}; }
+
+            var _scrollY = 0;
+            window.scrollY = 0;
+            window.pageYOffset = 0;
+
+            if (!window.dispatchEvent) {
+                window.dispatchEvent = function(event) { return true; };
+            }
+
+            window.scrollTo = function(xOrOpts, y) {
+                if (typeof xOrOpts === 'object') {
+                    y = xOrOpts.top || 0;
+                } else if (y === undefined) {
+                    y = xOrOpts || 0;
+                }
+                _scrollY = Math.max(0, y);
+                window.scrollY = _scrollY;
+                window.pageYOffset = _scrollY;
+                var event = new Event('scroll');
+                window.dispatchEvent(event);
+            };
+
+            window.scrollBy = function(xOrOpts, y) {
+                if (typeof xOrOpts === 'object') {
+                    y = xOrOpts.top || 0;
+                } else if (y === undefined) {
+                    y = xOrOpts || 0;
+                }
+                window.scrollTo(0, _scrollY + y);
             };
         })();
         "#,
