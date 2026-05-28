@@ -861,7 +861,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 height: args.height,
             };
 
-            crate::render::screenshot::render_to_image(&doc, &config, &args.output)?;
+            crate::render::screenshot::render_to_image_with_base(&doc, &config, &args.output, Some(&url))?;
 
             if cli.json {
                 println!(

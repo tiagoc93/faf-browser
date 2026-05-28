@@ -38,7 +38,13 @@ pub struct ComputedStyle {
     pub position: String,
     pub top: String,
     pub left: String,
+    pub bottom: String,
+    pub right: String,
     pub z_index: String,
+    pub text_align: String,
+    pub line_height: String,
+    pub font_weight: String,
+    pub overflow: String,
 }
 
 impl Default for ComputedStyle {
@@ -74,7 +80,13 @@ impl Default for ComputedStyle {
             position: "static".to_string(),
             top: "auto".to_string(),
             left: "auto".to_string(),
+            bottom: "auto".to_string(),
+            right: "auto".to_string(),
             z_index: "auto".to_string(),
+            text_align: "left".to_string(),
+            line_height: "normal".to_string(),
+            font_weight: "normal".to_string(),
+            overflow: "visible".to_string(),
         }
     }
 }
@@ -188,6 +200,12 @@ fn apply_declaration(style: &mut ComputedStyle, property: &str, value: &str) {
         "border-bottom" => apply_border_side(style, "bottom", value),
         "border-left" => apply_border_side(style, "left", value),
         "border" => apply_border_shorthand(style, value),
+        "bottom" => style.bottom = value.to_string(),
+        "right" => style.right = value.to_string(),
+        "text-align" => style.text_align = value.to_string(),
+        "line-height" => style.line_height = value.to_string(),
+        "font-weight" => style.font_weight = value.to_string(),
+        "overflow" => style.overflow = value.to_string(),
         _ => {}
     }
 }

@@ -1,28 +1,157 @@
 use crate::css::layout::{compute_box_model, css_to_pixels};
 use crate::render::tree::{NodeType, VisualNode};
+use ab_glyph::{Font, FontArc, PxScale, ScaleFont};
+use std::collections::HashMap;
+use std::fs;
 use tiny_skia::Rect;
+
+/// Caminhos de fontes TTF conhecidos no sistema
+const FONT_PATHS: &[&str] = &[
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSerif.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
+];
 
 /// Calcula o layout da árvore visual, definindo `rect` de cada nó.
 ///
-/// * Blocos empilham verticalmente com margin collapsing simplificado.
-/// * Inlines fluem horizontalmente dentro do bloco pai, quebrando linha quando
-///   excedem a largura do container.
-/// * Nós de texto (`#text`) herdam o fluxo inline.
+/// Carrega fontes uma vez (cache) e passa para o layout recursivo,
+/// permitindo medição real de texto com ab_glyph.
 pub fn compute_layout(tree: &mut VisualNode, viewport_width: f32) {
-    let _ = layout_block(tree, 0.0, 0.0, viewport_width, viewport_width);
+    let font_cache = load_font_cache();
+    let default_font = font_cache
+        .values()
+        .next()
+        .cloned();
+    let _ = layout_block(
+        tree,
+        0.0,
+        0.0,
+        viewport_width,
+        viewport_width,
+        &font_cache,
+        &default_font,
+    );
+}
+
+/// Carrega todas as fontes do sistema em um cache.
+fn load_font_cache() -> HashMap<String, FontArc> {
+    let mut cache = HashMap::new();
+    for &path in FONT_PATHS {
+        if let Some(file_name) = path.rsplit('/').next() {
+            let file_stem = file_name.rsplit('.').next_back().unwrap_or(file_name);
+            let key = file_stem.to_lowercase();
+            if !cache.contains_key(&key) {
+                if let Ok(data) = fs::read(path) {
+                    if let Ok(font) = FontArc::try_from_vec(data) {
+                        cache.insert(key, font);
+                    }
+                }
+            }
+        }
+    }
+    cache
+}
+
+/// Resolve a fonte para uma dada font-family usando o cache.
+fn resolve_font<'a>(
+    family: &str,
+    cache: &'a HashMap<String, FontArc>,
+    default: &'a Option<FontArc>,
+) -> Option<&'a FontArc> {
+    if family.is_empty() || family == "inherit" || family == "serif" || family == "sans-serif" {
+        return default.as_ref();
+    }
+    let family_lower = family
+        .split(',')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .to_lowercase()
+        .replace(' ', "");
+
+    // Busca parcial
+    for (key, font) in cache {
+        if key.contains(&family_lower) || family_lower.contains(key.as_str()) {
+            return Some(font);
+        }
+    }
+    default.as_ref()
+}
+
+/// Mede a largura real do texto usando ab_glyph (h_advance de cada glyph).
+pub fn measure_text_width(text: &str, font: &FontArc, font_size: f32) -> f32 {
+    if text.is_empty() {
+        return 0.0;
+    }
+    let size = font_size.clamp(8.0, 200.0);
+    let px_scale = PxScale::from(size);
+    let px_font = font.as_scaled(px_scale);
+    let mut width = 0.0f32;
+    for ch in text.chars() {
+        let glyph = px_font.scaled_glyph(ch);
+        width += px_font.h_advance(glyph.id);
+    }
+    width
+}
+
+/// Heurística simples para estimar largura de texto (fallback sem fonte).
+fn estimate_text_width(text: &str, font_size: f32) -> f32 {
+    if text.is_empty() {
+        return 0.0;
+    }
+    text.chars().count() as f32 * font_size * 0.5
+}
+
+/// Calcula a largura do texto usando fonte real se disponível, senão heurística.
+fn text_width(
+    text: &str,
+    font_size: f32,
+    family: &str,
+    cache: &HashMap<String, FontArc>,
+    default_font: &Option<FontArc>,
+) -> f32 {
+    if text.is_empty() {
+        return 0.0;
+    }
+    if let Some(font) = resolve_font(family, cache, default_font) {
+        measure_text_width(text, font, font_size)
+    } else {
+        estimate_text_width(text, font_size)
+    }
+}
+
+/// Resolve line-height CSS: "normal" → 1.2, número → multiplicador, "20px" → abs
+fn resolve_line_height(value: &str, font_size: f32, container_width: f32) -> f32 {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || trimmed == "normal" || trimmed == "inherit" {
+        return font_size * 1.2;
+    }
+    // Número puro = multiplicador
+    if let Ok(n) = trimmed.parse::<f32>() {
+        return font_size * n;
+    }
+    // Valor com unidade
+    let px = css_to_pixels(trimmed, container_width, font_size);
+    if px > 0.0 { px } else { font_size * 1.2 }
 }
 
 /// Layout recursivo de um nó block.
-///
-/// `x` e `y` definem o canto superior esquerdo da **área disponível** (não
-/// incluem margem do próprio nó). Retorna a coordenada `y` da borda inferior
-/// do border-box (útil para empilhamento do pai).
+#[allow(clippy::too_many_arguments)]
 fn layout_block(
     node: &mut VisualNode,
     x: f32,
     y: f32,
     available_width: f32,
     viewport_width: f32,
+    font_cache: &HashMap<String, FontArc>,
+    default_font: &Option<FontArc>,
 ) -> f32 {
     let font_size = css_to_pixels(&node.style.font_size, viewport_width, 16.0).max(8.0);
     let bm = compute_box_model(&node.style, available_width, font_size);
@@ -30,7 +159,6 @@ fn layout_block(
     let margin_left = bm.margin_left;
     let margin_right = bm.margin_right;
     let margin_top = bm.margin_top;
-    let _margin_bottom = bm.margin_bottom;
 
     let block_x = x + margin_left;
     let block_width = if bm.width > 0.0 {
@@ -45,11 +173,22 @@ fn layout_block(
     let block_y = y + margin_top;
     let content_y = block_y + bm.padding_top;
 
+    // Separar filhos absolute/fixed do fluxo normal
+    let mut normal_indices: Vec<usize> = Vec::new();
+    let mut abs_indices: Vec<usize> = Vec::new();
+    for (i, child) in node.children.iter().enumerate() {
+        if child.style.position == "absolute" || child.style.position == "fixed" {
+            abs_indices.push(i);
+        } else {
+            normal_indices.push(i);
+        }
+    }
+
+    // Layout do fluxo normal
     let mut child_cursor = content_y;
     let mut prev_child_margin_bottom = 0.0f32;
-    let mut child_idx = 0;
 
-    while child_idx < node.children.len() {
+    for &child_idx in &normal_indices {
         if node.children[child_idx].node_type == NodeType::Block {
             let child_font_size = css_to_pixels(
                 &node.children[child_idx].style.font_size,
@@ -64,7 +203,6 @@ fn layout_block(
             );
             let child_margin_top = child_bm.margin_top;
 
-            // Margin collapsing simplificado: espaço = max(margin_bottom anterior, margin_top atual)
             let gap = child_margin_top.max(prev_child_margin_bottom);
             child_cursor += gap;
 
@@ -74,55 +212,91 @@ fn layout_block(
                 child_cursor - child_margin_top,
                 content_width,
                 viewport_width,
+                font_cache,
+                default_font,
             );
             child_cursor = child_bottom;
             prev_child_margin_bottom = child_bm.margin_bottom;
-            child_idx += 1;
         } else {
-            // Coleta run de inlines consecutivos
-            let run_start = child_idx;
-            while child_idx < node.children.len()
-                && node.children[child_idx].node_type == NodeType::Inline
-            {
-                child_idx += 1;
+            // Inline run: coletar inlines consecutivos no fluxo normal
+            let start_pos = child_idx;
+            let mut end_pos = child_idx + 1;
+            // Avançar enquanto o próximo índice normal também é inline e consecutivo
+            while end_pos < node.children.len() {
+                if node.children[end_pos].style.position == "absolute"
+                    || node.children[end_pos].style.position == "fixed"
+                {
+                    end_pos += 1;
+                    continue;
+                }
+                if node.children[end_pos].node_type == NodeType::Inline {
+                    end_pos += 1;
+                } else {
+                    break;
+                }
             }
-            let run_end = child_idx;
 
             let mut line_x = content_x;
             let mut line_y = child_cursor;
             let mut line_height = 0.0f32;
 
-            for idx in run_start..run_end {
+            for idx in start_pos..end_pos {
+                if node.children[idx].style.position == "absolute"
+                    || node.children[idx].style.position == "fixed"
+                {
+                    continue;
+                }
+                if node.children[idx].node_type != NodeType::Inline {
+                    break;
+                }
+
                 let child = &mut node.children[idx];
                 let child_font_size =
                     css_to_pixels(&child.style.font_size, viewport_width, font_size).max(8.0);
-                let child_line_height = child_font_size * 1.2;
+                let child_lh = resolve_line_height(
+                    &child.style.line_height,
+                    child_font_size,
+                    viewport_width,
+                );
 
-                let text_width = estimate_text_width(&child.text, child_font_size);
+                let tw = text_width(
+                    &child.text,
+                    child_font_size,
+                    &child.style.font_family,
+                    font_cache,
+                    default_font,
+                );
 
-                // Quebra de linha se exceder largura do container
-                if line_x + text_width > content_x + content_width
-                    && text_width > 0.0
-                    && line_x > content_x
-                {
+                // Quebra de linha
+                if line_x + tw > content_x + content_width && tw > 0.0 && line_x > content_x {
                     line_x = content_x;
                     line_y += line_height;
                     line_height = 0.0;
                 }
 
-                child.rect = Rect::from_xywh(line_x, line_y, text_width, child_line_height)
+                child.rect = Rect::from_xywh(line_x, line_y, tw, child_lh)
                     .unwrap_or(Rect::from_xywh(0.0, 0.0, 0.0, 0.0).unwrap());
 
                 if !child.children.is_empty() {
-                    layout_inline_children(child, line_x, line_y, content_width, viewport_width);
+                    layout_inline_children(
+                        child,
+                        line_x,
+                        line_y,
+                        content_width,
+                        viewport_width,
+                        font_cache,
+                        default_font,
+                    );
                 }
 
-                line_x += text_width;
-                line_height = line_height.max(child_line_height);
+                line_x += tw;
+                line_height = line_height.max(child_lh);
             }
 
+            // Atualizar child_idx para pular os inlines processados
+            // (o for loop vai incrementar de qualquer forma)
             child_cursor = line_y + line_height;
-            prev_child_margin_bottom = 0.0; // inlines não participam de margin collapsing
+            prev_child_margin_bottom = 0.0;
         }
     }
 
@@ -136,6 +310,7 @@ fn layout_block(
     let mut final_x = block_x;
     let mut final_y = block_y;
 
+    // Position relativa (já existia)
     if node.style.position == "relative" {
         if node.style.top != "auto" {
             let top_px = css_to_pixels(&node.style.top, viewport_width, font_size);
@@ -155,16 +330,97 @@ fn layout_block(
     )
     .unwrap_or(Rect::from_xywh(0.0, 0.0, 0.0, 0.0).unwrap());
 
+    // Posicionar filhos absolute/fixed
+    for &ai in &abs_indices {
+        let child = &mut node.children[ai];
+        let child_font_size = css_to_pixels(
+            &child.style.font_size,
+            viewport_width,
+            font_size,
+        )
+        .max(8.0);
+        let child_bm = compute_box_model(&child.style, content_width, child_font_size);
+
+        // Containing block
+        let (cb_x, cb_y, cb_w, cb_h) = if child.style.position == "fixed" {
+            // Fixed: viewport
+            (0.0f32, 0.0f32, viewport_width, viewport_width)
+        } else {
+            // Absolute: nearest positioned ancestor = current node (simplification)
+            (
+                final_x,
+                final_y,
+                block_width.max(0.0),
+                block_height.max(0.0),
+            )
+        };
+
+        let child_w = if child_bm.width > 0.0 {
+            child_bm.width
+        } else if child.style.left != "auto" && child.style.right != "auto" {
+            let l = css_to_pixels(&child.style.left, cb_w, child_font_size);
+            let r = css_to_pixels(&child.style.right, cb_w, child_font_size);
+            (cb_w - l - r).max(0.0)
+        } else {
+            // Shrink-to-fit: usar largura do conteúdo
+            content_width
+        };
+
+        let child_h = if child_bm.height > 0.0 {
+            child_bm.height
+        } else if child.style.top != "auto" && child.style.bottom != "auto" {
+            let t = css_to_pixels(&child.style.top, cb_h, child_font_size);
+            let b = css_to_pixels(&child.style.bottom, cb_h, child_font_size);
+            (cb_h - t - b).max(0.0)
+        } else {
+            block_height // fallback
+        };
+
+        let mut abs_x = cb_x;
+        let mut abs_y = cb_y;
+
+        if child.style.left != "auto" {
+            abs_x += css_to_pixels(&child.style.left, cb_w, child_font_size);
+        } else if child.style.right != "auto" {
+            let r = css_to_pixels(&child.style.right, cb_w, child_font_size);
+            abs_x = cb_x + cb_w - child_w - r;
+        }
+
+        if child.style.top != "auto" {
+            abs_y += css_to_pixels(&child.style.top, cb_h, child_font_size);
+        } else if child.style.bottom != "auto" {
+            let b = css_to_pixels(&child.style.bottom, cb_h, child_font_size);
+            abs_y = cb_y + cb_h - child_h - b;
+        }
+
+        child.rect = Rect::from_xywh(abs_x, abs_y, child_w, child_h)
+            .unwrap_or(Rect::from_xywh(0.0, 0.0, 0.0, 0.0).unwrap());
+
+        // Recursar layout dos filhos do absolute
+        let _ = layout_block(
+            child,
+            abs_x,
+            abs_y,
+            child_w,
+            viewport_width,
+            font_cache,
+            default_font,
+        );
+    }
+
     block_y + block_height
 }
 
-/// Posiciona filhos inline de um nó inline (ex: `<span>` com texto e `<strong>`).
+/// Posiciona filhos inline de um nó inline.
+#[allow(clippy::too_many_arguments)]
 fn layout_inline_children(
     node: &mut VisualNode,
     x: f32,
     y: f32,
     available_width: f32,
     viewport_width: f32,
+    font_cache: &HashMap<String, FontArc>,
+    default_font: &Option<FontArc>,
 ) {
     let font_size = css_to_pixels(&node.style.font_size, viewport_width, 16.0).max(8.0);
     let mut line_x = x;
@@ -174,24 +430,38 @@ fn layout_inline_children(
     for child in &mut node.children {
         let child_font_size =
             css_to_pixels(&child.style.font_size, viewport_width, font_size).max(8.0);
-        let child_line_height = child_font_size * 1.2;
-        let text_width = estimate_text_width(&child.text, child_font_size);
+        let child_lh = resolve_line_height(&child.style.line_height, child_font_size, viewport_width);
+        let tw = text_width(
+            &child.text,
+            child_font_size,
+            &child.style.font_family,
+            font_cache,
+            default_font,
+        );
 
-        if line_x + text_width > x + available_width && text_width > 0.0 && line_x > x {
+        if line_x + tw > x + available_width && tw > 0.0 && line_x > x {
             line_x = x;
             line_y += line_height;
             line_height = 0.0;
         }
 
-        child.rect = Rect::from_xywh(line_x, line_y, text_width, child_line_height)
+        child.rect = Rect::from_xywh(line_x, line_y, tw, child_lh)
             .unwrap_or(Rect::from_xywh(0.0, 0.0, 0.0, 0.0).unwrap());
 
         if !child.children.is_empty() {
-            layout_inline_children(child, line_x, line_y, available_width, viewport_width);
+            layout_inline_children(
+                child,
+                line_x,
+                line_y,
+                available_width,
+                viewport_width,
+                font_cache,
+                default_font,
+            );
         }
 
-        line_x += text_width;
-        line_height = line_height.max(child_line_height);
+        line_x += tw;
+        line_height = line_height.max(child_lh);
     }
 
     // Ajusta o rect do nó inline pai para englobar seus filhos
@@ -224,14 +494,6 @@ fn layout_inline_children(
     }
 }
 
-/// Heurística simples para estimar largura de texto sem carregar fonte.
-fn estimate_text_width(text: &str, font_size: f32) -> f32 {
-    if text.is_empty() {
-        return 0.0;
-    }
-    text.chars().count() as f32 * font_size * 0.5
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,7 +513,6 @@ mod tests {
         let body = tree.children.iter().find(|c| c.tag == "body").unwrap();
         let divs: Vec<_> = body.children.iter().filter(|c| c.tag == "div").collect();
         assert_eq!(divs.len(), 2);
-        // O segundo div deve estar abaixo do primeiro
         assert!(divs[1].rect.y() > divs[0].rect.y());
     }
 
@@ -267,7 +528,6 @@ mod tests {
         let p = body.children.iter().find(|c| c.tag == "p").unwrap();
         let spans: Vec<_> = p.children.iter().filter(|c| c.tag == "span").collect();
         assert_eq!(spans.len(), 2);
-        // O segundo span deve estar à direita do primeiro (mesmo y ou próximo)
         assert!(spans[1].rect.x() >= spans[0].rect.x());
     }
 
@@ -279,21 +539,16 @@ mod tests {
         let sheet = parse_css(css).unwrap();
         let computed = compute_styles(&doc, &sheet);
         let mut tree = build_layout_tree(&doc, &computed);
-        compute_layout(&mut tree, 50.0); // viewport bem estreito
+        compute_layout(&mut tree, 50.0);
 
         let body = tree.children.iter().find(|c| c.tag == "body").unwrap();
         let p = body.children.iter().find(|c| c.tag == "p").unwrap();
         let texts: Vec<_> = p.children.iter().filter(|c| c.tag == "#text").collect();
-        // Com viewport estreita, textos devem ter sido quebrados em múltiplas linhas
-        // (pelo menos um texto deve estar em y diferente)
         let ys: Vec<f32> = texts.iter().map(|t| t.rect.y()).collect();
         let mut unique_ys = ys.clone();
         unique_ys.sort_by(|a, b| a.partial_cmp(b).unwrap());
         unique_ys.dedup_by(|a, b| (*a - *b).abs() < 1.0);
-        assert!(
-            !unique_ys.is_empty(),
-            "deve haver pelo menos uma linha de texto"
-        );
+        assert!(!unique_ys.is_empty(), "deve haver pelo menos uma linha de texto");
     }
 
     #[test]
@@ -309,12 +564,7 @@ mod tests {
         let body = tree.children.iter().find(|c| c.tag == "body").unwrap();
         let divs: Vec<_> = body.children.iter().filter(|c| c.tag == "div").collect();
         assert_eq!(divs.len(), 2);
-        // A distância entre os tops deve refletir max(10, 30) = 30 (ou próximo)
         let gap = divs[1].rect.y() - divs[0].rect.y();
-        assert!(
-            gap >= 20.0,
-            "gap deve refletir margin collapsing, gap={}",
-            gap
-        );
+        assert!(gap >= 20.0, "gap deve refletir margin collapsing, gap={}", gap);
     }
 }
