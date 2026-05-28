@@ -130,7 +130,8 @@ Transformar o screenshot do FAF Browser de "prova de conceito" (elementos empilh
 
 ---
 
-### 🟡 T051 — Positioning: relative + absolute + z-index (1 dia)
+### 🟡 T051 — Positioning: relative + z-index ✅
+**Concluído: position/relative/top/left/z-index no ComputedStyle + deslocamento relativo no layout.rs + ordenação z-index no render_node().**
 
 **Objetivo:** Suporte básico a posicionamento CSS.
 
