@@ -1,6 +1,7 @@
 use crate::css::selector::ElementMatch;
 use crate::css::style::ComputedStyle;
 use crate::dom::HtmlDocument;
+use std::collections::HashMap;
 use tiny_skia::Rect;
 
 /// Tipo de nó visual: Block ou Inline.
@@ -21,6 +22,7 @@ pub struct VisualNode {
     pub rect: Rect,
     pub id: Option<String>,
     pub classes: Vec<String>,
+    pub attributes: HashMap<String, String>,
 }
 
 /// Constrói a árvore visual a partir do DOM e dos estilos computados.
@@ -43,6 +45,7 @@ pub fn build_layout_tree(
         rect: Rect::from_xywh(0.0, 0.0, 0.0, 0.0).unwrap(),
         id: None,
         classes: Vec::new(),
+        attributes: HashMap::new(),
     })
 }
 
@@ -77,6 +80,11 @@ fn build_node_recursive(
         rect: Rect::from_xywh(0.0, 0.0, 0.0, 0.0).unwrap(),
         id: element.value().id().map(|s| s.to_string()),
         classes: element.value().classes().map(|s| s.to_string()).collect(),
+        attributes: element
+            .value()
+            .attrs()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect(),
     };
 
     // Processar filhos (elementos e text nodes)
@@ -102,6 +110,7 @@ fn build_node_recursive(
                         rect: Rect::from_xywh(0.0, 0.0, 0.0, 0.0).unwrap(),
                         id: None,
                         classes: Vec::new(),
+                        attributes: HashMap::new(),
                     });
                 }
             }

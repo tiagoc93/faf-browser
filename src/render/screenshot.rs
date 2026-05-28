@@ -7,6 +7,7 @@ use crate::render::layout::compute_layout;
 use crate::render::tree::VisualNode;
 use crate::render::tree::build_layout_tree;
 use ab_glyph::{Font, FontArc, PxScale, ScaleFont};
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use tiny_skia::{ColorU8, Paint, Pixmap, Rect, Transform};
@@ -79,6 +80,7 @@ pub fn render_to_image(
     let mut text_count = 0;
     let mut font_ok_count = 0;
     let total_nodes = count_nodes(&tree);
+    let mut image_cache: HashMap<String, image::DynamicImage> = HashMap::new();
 
     render_node(
         &mut pixmap,
@@ -88,6 +90,7 @@ pub fn render_to_image(
         height,
         &mut text_count,
         &mut font_ok_count,
+        &mut image_cache,
     );
 
     log::info!(
@@ -106,6 +109,7 @@ pub fn render_to_image(
 }
 
 /// Renderiza um nó visual e seus filhos recursivamente.
+#[allow(clippy::too_many_arguments)]
 fn render_node(
     pixmap: &mut Pixmap,
     node: &VisualNode,
@@ -114,6 +118,7 @@ fn render_node(
     pm_height: u32,
     text_count: &mut usize,
     font_ok_count: &mut usize,
+    image_cache: &mut HashMap<String, image::DynamicImage>,
 ) {
     let x = node.rect.x();
     let y = node.rect.y();
@@ -134,6 +139,56 @@ fn render_node(
                     pixmap.fill_rect(rect, &bg_paint, Transform::identity(), None);
                 }
             }
+
+        // Desenhar bordas
+        let font_size = css_to_pixels(&node.style.font_size, pm_width as f32, 16.0).max(8.0);
+        let border_top_w = css_to_pixels(&node.style.border_top_width, pm_width as f32, font_size);
+        let border_right_w = css_to_pixels(&node.style.border_right_width, pm_width as f32, font_size);
+        let border_bottom_w = css_to_pixels(&node.style.border_bottom_width, pm_width as f32, font_size);
+        let border_left_w = css_to_pixels(&node.style.border_left_width, pm_width as f32, font_size);
+
+        if border_top_w > 0.0 && node.style.border_top_style != "none" && node.style.border_top_style != "hidden"
+            && let Some(color) = crate::css::color::parse_color(&node.style.border_top_color) {
+                let mut paint = Paint::default();
+                paint.set_color_rgba8(color.r, color.g, color.b, (color.a * 255.0) as u8);
+                if let Some(rect) = Rect::from_xywh(x, y, draw_w, border_top_w) {
+                    pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+                }
+            }
+        if border_bottom_w > 0.0 && node.style.border_bottom_style != "none" && node.style.border_bottom_style != "hidden"
+            && let Some(color) = crate::css::color::parse_color(&node.style.border_bottom_color) {
+                let mut paint = Paint::default();
+                paint.set_color_rgba8(color.r, color.g, color.b, (color.a * 255.0) as u8);
+                if let Some(rect) = Rect::from_xywh(x, y + draw_h - border_bottom_w, draw_w, border_bottom_w) {
+                    pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+                }
+            }
+        if border_left_w > 0.0 && node.style.border_left_style != "none" && node.style.border_left_style != "hidden"
+            && let Some(color) = crate::css::color::parse_color(&node.style.border_left_color) {
+                let mut paint = Paint::default();
+                paint.set_color_rgba8(color.r, color.g, color.b, (color.a * 255.0) as u8);
+                if let Some(rect) = Rect::from_xywh(x, y, border_left_w, draw_h) {
+                    pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+                }
+            }
+        if border_right_w > 0.0 && node.style.border_right_style != "none" && node.style.border_right_style != "hidden"
+            && let Some(color) = crate::css::color::parse_color(&node.style.border_right_color) {
+                let mut paint = Paint::default();
+                paint.set_color_rgba8(color.r, color.g, color.b, (color.a * 255.0) as u8);
+                if let Some(rect) = Rect::from_xywh(x + draw_w - border_right_w, y, border_right_w, draw_h) {
+                    pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+                }
+            }
+
+        // Desenhar imagens <img>
+        if node.tag == "img" {
+            if let Some(src) = node.attributes.get("src") {
+                draw_image(pixmap, node, src, image_cache, pm_width, pm_height);
+            } else {
+                // Fallback: placeholder cinza
+                draw_image_placeholder(pixmap, x, y, draw_w, draw_h);
+            }
+        }
 
         // Desenhar texto usando ab_glyph
         if !node.text.is_empty() {
@@ -204,6 +259,7 @@ fn render_node(
             pm_height,
             text_count,
             font_ok_count,
+            image_cache,
         );
     }
 }
@@ -345,6 +401,105 @@ fn render_text_ab(
             pixels_drawn,
             &text[..text.len().min(20)]
         );
+    }
+}
+
+/// Desenha uma imagem <img> no pixmap, carregando via HTTP se necessário.
+fn draw_image(
+    pixmap: &mut Pixmap,
+    node: &VisualNode,
+    src: &str,
+    image_cache: &mut HashMap<String, image::DynamicImage>,
+    _pm_width: u32,
+    _pm_height: u32,
+) {
+    let x = node.rect.x();
+    let y = node.rect.y();
+    let w = node.rect.width();
+    let h = node.rect.height();
+
+    // Verificar cache
+    let img = if let Some(cached) = image_cache.get(src) {
+        Some(cached.clone())
+    } else {
+        // Tentar carregar via HTTP (blocking)
+        match reqwest::blocking::get(src) {
+            Ok(response) => {
+                if response.status().is_success() {
+                    match response.bytes() {
+                        Ok(bytes) => {
+                            match image::load_from_memory(&bytes) {
+                                Ok(dynamic_img) => {
+                                    image_cache.insert(src.to_string(), dynamic_img.clone());
+                                    Some(dynamic_img)
+                                }
+                                Err(e) => {
+                                    log::warn!("Falha ao decodificar imagem {}: {}", src, e);
+                                    None
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!("Falha ao ler bytes da imagem {}: {}", src, e);
+                            None
+                        }
+                    }
+                } else {
+                    log::warn!("HTTP {} ao carregar imagem {}", response.status(), src);
+                    None
+                }
+            }
+            Err(e) => {
+                log::warn!("Falha ao requisitar imagem {}: {}", src, e);
+                None
+            }
+        }
+    };
+
+    if let Some(img) = img {
+        let resized = img.resize(w as u32, h as u32, image::imageops::FilterType::Lanczos3);
+        let rgba = resized.to_rgba8();
+        let img_width = rgba.width();
+        let img_height = rgba.height();
+        let pm_w = pixmap.width();
+        let pm_h = pixmap.height();
+        let pixels = pixmap.pixels_mut();
+
+        for iy in 0..img_height {
+            for ix in 0..img_width {
+                let px = (x as u32 + ix).min(pm_w - 1);
+                let py = (y as u32 + iy).min(pm_h - 1);
+                if px >= pm_w || py >= pm_h {
+                    continue;
+                }
+                let pixel = rgba.get_pixel(ix, iy);
+                let idx = (py * pm_w + px) as usize;
+                let bg = pixels[idx].demultiply();
+                let alpha = pixel[3] as f32 / 255.0;
+                let inv_alpha = 1.0 - alpha;
+                let r = (pixel[0] as f32 * alpha + bg.red() as f32 * inv_alpha) as u8;
+                let g = (pixel[1] as f32 * alpha + bg.green() as f32 * inv_alpha) as u8;
+                let b = (pixel[2] as f32 * alpha + bg.blue() as f32 * inv_alpha) as u8;
+                let a = (255.0 * alpha + bg.alpha() as f32 * inv_alpha) as u8;
+                pixels[idx] = ColorU8::from_rgba(r, g, b, a).premultiply();
+            }
+        }
+    } else {
+        draw_image_placeholder(pixmap, x, y, w, h);
+    }
+}
+
+/// Desenha um placeholder cinza para imagens que não carregaram.
+fn draw_image_placeholder(pixmap: &mut Pixmap, x: f32, y: f32, w: f32, h: f32) {
+    let draw_w = w.max(0.0);
+    let draw_h = h.max(0.0);
+    if draw_w <= 0.0 || draw_h <= 0.0 {
+        return;
+    }
+    let mut paint = Paint::default();
+    paint.set_color_rgba8(200, 200, 200, 255);
+    if let Some(rect) = Rect::from_xywh(x, y, draw_w, draw_h) {
+        pixmap.fill_rect(rect, &paint, Transform::identity(), None);
     }
 }
 

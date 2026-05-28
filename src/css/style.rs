@@ -23,6 +23,18 @@ pub struct ComputedStyle {
     pub padding_bottom: String,
     pub padding_left: String,
     pub display: String,
+    pub border_top_width: String,
+    pub border_right_width: String,
+    pub border_bottom_width: String,
+    pub border_left_width: String,
+    pub border_top_color: String,
+    pub border_right_color: String,
+    pub border_bottom_color: String,
+    pub border_left_color: String,
+    pub border_top_style: String,
+    pub border_right_style: String,
+    pub border_bottom_style: String,
+    pub border_left_style: String,
 }
 
 impl Default for ComputedStyle {
@@ -43,6 +55,18 @@ impl Default for ComputedStyle {
             padding_bottom: "0".to_string(),
             padding_left: "0".to_string(),
             display: "".to_string(),
+            border_top_width: "0".to_string(),
+            border_right_width: "0".to_string(),
+            border_bottom_width: "0".to_string(),
+            border_left_width: "0".to_string(),
+            border_top_color: "transparent".to_string(),
+            border_right_color: "transparent".to_string(),
+            border_bottom_color: "transparent".to_string(),
+            border_left_color: "transparent".to_string(),
+            border_top_style: "none".to_string(),
+            border_right_style: "none".to_string(),
+            border_bottom_style: "none".to_string(),
+            border_left_style: "none".to_string(),
         }
     }
 }
@@ -132,8 +156,219 @@ fn apply_declaration(style: &mut ComputedStyle, property: &str, value: &str) {
         "display" => style.display = value.to_string(),
         "margin" => apply_shorthand_margin(style, value),
         "padding" => apply_shorthand_padding(style, value),
+        "border-top-width" => style.border_top_width = value.to_string(),
+        "border-right-width" => style.border_right_width = value.to_string(),
+        "border-bottom-width" => style.border_bottom_width = value.to_string(),
+        "border-left-width" => style.border_left_width = value.to_string(),
+        "border-top-color" => style.border_top_color = value.to_string(),
+        "border-right-color" => style.border_right_color = value.to_string(),
+        "border-bottom-color" => style.border_bottom_color = value.to_string(),
+        "border-left-color" => style.border_left_color = value.to_string(),
+        "border-top-style" => style.border_top_style = value.to_string(),
+        "border-right-style" => style.border_right_style = value.to_string(),
+        "border-bottom-style" => style.border_bottom_style = value.to_string(),
+        "border-left-style" => style.border_left_style = value.to_string(),
+        "border-width" => apply_shorthand_border_width(style, value),
+        "border-color" => apply_shorthand_border_color(style, value),
+        "border-style" => apply_shorthand_border_style(style, value),
+        "border-top" => apply_border_side(style, "top", value),
+        "border-right" => apply_border_side(style, "right", value),
+        "border-bottom" => apply_border_side(style, "bottom", value),
+        "border-left" => apply_border_side(style, "left", value),
+        "border" => apply_border_shorthand(style, value),
         _ => {}
     }
+}
+
+fn apply_shorthand_border_width(style: &mut ComputedStyle, value: &str) {
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    match parts.len() {
+        1 => {
+            style.border_top_width = parts[0].to_string();
+            style.border_right_width = parts[0].to_string();
+            style.border_bottom_width = parts[0].to_string();
+            style.border_left_width = parts[0].to_string();
+        }
+        2 => {
+            style.border_top_width = parts[0].to_string();
+            style.border_right_width = parts[1].to_string();
+            style.border_bottom_width = parts[0].to_string();
+            style.border_left_width = parts[1].to_string();
+        }
+        3 => {
+            style.border_top_width = parts[0].to_string();
+            style.border_right_width = parts[1].to_string();
+            style.border_bottom_width = parts[2].to_string();
+            style.border_left_width = parts[1].to_string();
+        }
+        4 => {
+            style.border_top_width = parts[0].to_string();
+            style.border_right_width = parts[1].to_string();
+            style.border_bottom_width = parts[2].to_string();
+            style.border_left_width = parts[3].to_string();
+        }
+        _ => {}
+    }
+}
+
+fn apply_shorthand_border_color(style: &mut ComputedStyle, value: &str) {
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    match parts.len() {
+        1 => {
+            style.border_top_color = parts[0].to_string();
+            style.border_right_color = parts[0].to_string();
+            style.border_bottom_color = parts[0].to_string();
+            style.border_left_color = parts[0].to_string();
+        }
+        2 => {
+            style.border_top_color = parts[0].to_string();
+            style.border_right_color = parts[1].to_string();
+            style.border_bottom_color = parts[0].to_string();
+            style.border_left_color = parts[1].to_string();
+        }
+        3 => {
+            style.border_top_color = parts[0].to_string();
+            style.border_right_color = parts[1].to_string();
+            style.border_bottom_color = parts[2].to_string();
+            style.border_left_color = parts[1].to_string();
+        }
+        4 => {
+            style.border_top_color = parts[0].to_string();
+            style.border_right_color = parts[1].to_string();
+            style.border_bottom_color = parts[2].to_string();
+            style.border_left_color = parts[3].to_string();
+        }
+        _ => {}
+    }
+}
+
+fn apply_shorthand_border_style(style: &mut ComputedStyle, value: &str) {
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    match parts.len() {
+        1 => {
+            style.border_top_style = parts[0].to_string();
+            style.border_right_style = parts[0].to_string();
+            style.border_bottom_style = parts[0].to_string();
+            style.border_left_style = parts[0].to_string();
+        }
+        2 => {
+            style.border_top_style = parts[0].to_string();
+            style.border_right_style = parts[1].to_string();
+            style.border_bottom_style = parts[0].to_string();
+            style.border_left_style = parts[1].to_string();
+        }
+        3 => {
+            style.border_top_style = parts[0].to_string();
+            style.border_right_style = parts[1].to_string();
+            style.border_bottom_style = parts[2].to_string();
+            style.border_left_style = parts[1].to_string();
+        }
+        4 => {
+            style.border_top_style = parts[0].to_string();
+            style.border_right_style = parts[1].to_string();
+            style.border_bottom_style = parts[2].to_string();
+            style.border_left_style = parts[3].to_string();
+        }
+        _ => {}
+    }
+}
+
+fn apply_border_side(style: &mut ComputedStyle, side: &str, value: &str) {
+    let (width, color, bstyle) = parse_border_value(value);
+    match side {
+        "top" => {
+            if let Some(w) = width {
+                style.border_top_width = w;
+            }
+            if let Some(c) = color {
+                style.border_top_color = c;
+            }
+            if let Some(s) = bstyle {
+                style.border_top_style = s;
+            }
+        }
+        "right" => {
+            if let Some(w) = width {
+                style.border_right_width = w;
+            }
+            if let Some(c) = color {
+                style.border_right_color = c;
+            }
+            if let Some(s) = bstyle {
+                style.border_right_style = s;
+            }
+        }
+        "bottom" => {
+            if let Some(w) = width {
+                style.border_bottom_width = w;
+            }
+            if let Some(c) = color {
+                style.border_bottom_color = c;
+            }
+            if let Some(s) = bstyle {
+                style.border_bottom_style = s;
+            }
+        }
+        "left" => {
+            if let Some(w) = width {
+                style.border_left_width = w;
+            }
+            if let Some(c) = color {
+                style.border_left_color = c;
+            }
+            if let Some(s) = bstyle {
+                style.border_left_style = s;
+            }
+        }
+        _ => {}
+    }
+}
+
+fn apply_border_shorthand(style: &mut ComputedStyle, value: &str) {
+    let (_width, _color, _bstyle) = parse_border_value(value);
+    for side in ["top", "right", "bottom", "left"] {
+        apply_border_side(style, side, value);
+    }
+}
+
+/// Parseia um valor de borda (shorthand) e retorna (width, color, style)
+fn parse_border_value(value: &str) -> (Option<String>, Option<String>, Option<String>) {
+    let mut width = None;
+    let mut color = None;
+    let mut bstyle = None;
+
+    for part in value.split_whitespace() {
+        let lower = part.to_ascii_lowercase();
+        if is_border_style(&lower) {
+            bstyle = Some(lower);
+        } else if looks_like_length(part) {
+            width = Some(part.to_string());
+        } else {
+            // Assume que é cor
+            color = Some(part.to_string());
+        }
+    }
+
+    (width, color, bstyle)
+}
+
+fn is_border_style(value: &str) -> bool {
+    const STYLES: &[&str] = &[
+        "none", "hidden", "solid", "dashed", "dotted", "double", "groove", "ridge", "inset",
+        "outset",
+    ];
+    STYLES.contains(&value)
+}
+
+fn looks_like_length(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    lower.ends_with("px")
+        || lower.ends_with("em")
+        || lower.ends_with("rem")
+        || lower.ends_with("pt")
+        || lower.ends_with("%")
+        || lower == "0"
+        || lower.parse::<f32>().is_ok()
 }
 
 fn apply_shorthand_margin(style: &mut ComputedStyle, value: &str) {
@@ -455,5 +690,79 @@ mod tests {
         let results = compute_styles(&doc, &sheet);
 
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_border_shorthand() {
+        let html = "<html><body><div>Box</div></body></html>";
+        let doc = HtmlDocument::parse(html);
+        let css = "div { border: 2px solid red; }";
+        let sheet = parse_css(css).unwrap();
+        let results = compute_styles(&doc, &sheet);
+
+        assert_eq!(results.len(), 1);
+        let (_, style) = &results[0];
+        assert_eq!(style.border_top_width, "2px");
+        assert_eq!(style.border_right_width, "2px");
+        assert_eq!(style.border_bottom_width, "2px");
+        assert_eq!(style.border_left_width, "2px");
+        assert_eq!(style.border_top_color, "red");
+        assert_eq!(style.border_right_color, "red");
+        assert_eq!(style.border_bottom_color, "red");
+        assert_eq!(style.border_left_color, "red");
+        assert_eq!(style.border_top_style, "solid");
+        assert_eq!(style.border_right_style, "solid");
+        assert_eq!(style.border_bottom_style, "solid");
+        assert_eq!(style.border_left_style, "solid");
+    }
+
+    #[test]
+    fn test_border_width_shorthand() {
+        let html = "<html><body><div>Box</div></body></html>";
+        let doc = HtmlDocument::parse(html);
+        let css = "div { border-width: 1px 2px 3px 4px; }";
+        let sheet = parse_css(css).unwrap();
+        let results = compute_styles(&doc, &sheet);
+
+        assert_eq!(results.len(), 1);
+        let (_, style) = &results[0];
+        assert_eq!(style.border_top_width, "1px");
+        assert_eq!(style.border_right_width, "2px");
+        assert_eq!(style.border_bottom_width, "3px");
+        assert_eq!(style.border_left_width, "4px");
+    }
+
+    #[test]
+    fn test_border_color_shorthand() {
+        let html = "<html><body><div>Box</div></body></html>";
+        let doc = HtmlDocument::parse(html);
+        let css = "div { border-color: red blue; }";
+        let sheet = parse_css(css).unwrap();
+        let results = compute_styles(&doc, &sheet);
+
+        assert_eq!(results.len(), 1);
+        let (_, style) = &results[0];
+        assert_eq!(style.border_top_color, "red");
+        assert_eq!(style.border_right_color, "blue");
+        assert_eq!(style.border_bottom_color, "red");
+        assert_eq!(style.border_left_color, "blue");
+    }
+
+    #[test]
+    fn test_border_side_shorthand() {
+        let html = "<html><body><div>Box</div></body></html>";
+        let doc = HtmlDocument::parse(html);
+        let css = "div { border-top: 3px dashed #ff0000; }";
+        let sheet = parse_css(css).unwrap();
+        let results = compute_styles(&doc, &sheet);
+
+        assert_eq!(results.len(), 1);
+        let (_, style) = &results[0];
+        assert_eq!(style.border_top_width, "3px");
+        assert_eq!(style.border_top_style, "dashed");
+        assert_eq!(style.border_top_color, "#ff0000");
+        // Outros lados devem permanecer com o padrão
+        assert_eq!(style.border_right_width, "0");
+        assert_eq!(style.border_left_width, "0");
     }
 }

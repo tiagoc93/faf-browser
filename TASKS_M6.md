@@ -18,7 +18,8 @@ Transformar o screenshot do FAF Browser de "prova de conceito" (elementos empilh
 
 ## 📋 Tasks
 
-### 🔴 T045 — Layout Tree (2 dias)
+### 🔴 T045 — Layout Tree ✅
+**Concluído: layout.rs + tree.rs + screenshot refatorado. 14 arquivos, 711 linhas.**
 
 **Objetivo:** Construir uma árvore visual a partir do DOM, separando nós block de inline.
 
@@ -36,7 +37,8 @@ Transformar o screenshot do FAF Browser de "prova de conceito" (elementos empilh
 
 ---
 
-### 🔴 T046 — Inline Flow + Text Wrap (1 dia)
+### 🔴 T046 — Inline Flow + Text Wrap ✅
+**Concluído junto da T045: layout_inline_children() com quebra automática de linha, line-height = 1.2×, colapso de whitespace.**
 
 **Objetivo:** Renderizar texto em linha com quebra automática dentro da largura do viewport.
 
@@ -54,7 +56,8 @@ Transformar o screenshot do FAF Browser de "prova de conceito" (elementos empilh
 
 ---
 
-### 🔴 T047 — Block Flow + Margin Collapsing (1 dia)
+### 🔴 T047 — Block Flow + Margin Collapsing ✅
+**Concluído junto da T045: layout_block() com empilhamento vertical, margin collapsing (max vence), width 100%, padding.**
 
 **Objetivo:** Empilhar blocos verticalmente com margin collapsing correto.
 
@@ -72,7 +75,8 @@ Transformar o screenshot do FAF Browser de "prova de conceito" (elementos empilh
 
 ---
 
-### 🔴 T048 — Background Rendering (1 dia)
+### 🔴 T048 — Background Rendering ✅
+**Concluído junto da T045: render_node() em screenshot.rs já desenha background-color de cada nó visual.**
 
 **Objetivo:** Renderizar cores de fundo e imagens de background nos elementos.
 
