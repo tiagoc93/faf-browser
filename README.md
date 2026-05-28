@@ -8,7 +8,7 @@
 </picture>
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/test-287_passed-green?style=for-the-badge">
-  <img alt="Tests" src="https://img.shields.io/badge/test-287_passed-green?style=for-the-badge">
+  <img alt="Tests" src="https://img.shields.io/badge/test-297_passed-green?style=for-the-badge">
 </picture>
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge">
@@ -41,8 +41,14 @@ Renderizado pelo CSS Engine próprio. Runtime **QuickJS** embarcado para execuç
 | 🖌️ **Cores** — hex, rgb, rgba, 19 cores nomeadas | ✅ |
 | 🔤 **Fontes** — family, size (px/em/rem/%), weight (100-900) | ✅ |
 | 📊 **Computed Styles** — estilos reais da página (parseia `<style>` e `<link>` automagicamente) | ✅ |
-| 📸 **Screenshot** — render PNG com texto real e CSS via `ab_glyph` + `tiny-skia` | ✅ **NOVO** |
-| 📝 **Texto Real** — renderização com ab_glyph (100% Rust, sem freetype) | ✅ **NOVO** |
+| 📸 **Screenshot** — render PNG com texto real e CSS via `ab_glyph` + `tiny-skia` | ✅ **M7** |
+| 📝 **Texto Real** — renderização com ab_glyph (100% Rust, sem freetype) | ✅ **M7** |
+| 📐 **position: absolute + fixed** — containing block, viewport fallback | ✅ **M7** |
+| 📏 **Text Rendering** — ab_glyph real (não heurística), text-align, line-height | ✅ **M7** |
+| 🫧 **Overflow** — hidden com clip, visible, scroll | ✅ **M7** |
+| ⚡ **Font Cache** — carrega uma vez, reusa em todos os nós | ✅ **M7** |
+| 🌐 **CSS Externo** — baixa `<link rel="stylesheet">` automaticamente | ✅ **M7** |
+| 🔗 **URLs Relativas** — resolve imagens e CSS contra base URL | ✅ **M7** |
 | 🌳 **Layout Tree** — DOM → árvore visual block/inline com herança de estilo | ✅ **M6** |
 | 📐 **Layout Engine** — block flow com margin collapsing, inline flow com text wrap | ✅ **M6** |
 | 🎨 **Backgrounds** — cores de fundo nos elementos + body viewport | ✅ **M6** |
@@ -66,7 +72,7 @@ Renderizado pelo CSS Engine próprio. Runtime **QuickJS** embarcado para execuç
 | ⏱️ **setTimeout / setInterval** — timers integrados com event loop tokio | ✅ **NOVO** |
 | 📜 **Script tags** — execução automática de `<script>` inline e externo | ✅ **NOVO** |
 | 📦 **Binário único** — ~1MB, zero dependências runtime | ✅ |
-| 🧪 **266 testes** — unitários + integração em sites reais | ✅ |
+| 🧪 **297 testes** — unitários + integração em sites reais | ✅ |
 
 ---
 
@@ -537,35 +543,47 @@ O FAF Browser agora tem um motor de layout PRÓPRIO com árvore visual, fluxo bl
 
 ---
 
-### 📋 M7 — Playwright Parity + Polish (Planejado)
+### ✅ M7 — Playwright Parity + Polish (Concluído 🎉)
 
 Fechar as lacunas restantes pra screenshot fiel: absolute positioning, text rendering real, overflow, performance.
 
-| Task | Feature | Prioridade |
-|------|---------|:----------:|
-| **T053** | **position: absolute + fixed** — containing block, viewport | 🔴 |
-| **T054** | **Text Rendering Accuracy** — ab_glyph real, text-align, line-height, font-weight | 🟡 |
-| **T055** | **Overflow Handling** — hidden com clip, visible | 🟡 |
-| **T056** | **Performance & Font Cache** — cache de fontes, skip viewport, benchmark | 🟡 |
-| **T057** | **Testes M7** — 6+ testes de integração | 🔴 |
+| Task | Feature | Status |
+|------|---------|:------:|
+| **T053** | **position: absolute + fixed** — containing block, viewport | ✅ |
+| **T054** | **Text Rendering Accuracy** — ab_glyph real, text-align, line-height, font-weight | ✅ |
+| **T055** | **Overflow Handling** — hidden com clip, visible | ✅ |
+| **T056** | **Performance & Font Cache** — cache de fontes, skip viewport, benchmark | ✅ |
+| **T057** | **Testes M7** — 10 testes de integração | ✅ |
+| **T058** | **CSS Externo + URLs Relativas** — `<link>` stylesheets + base URL | ✅ |
 
 ```bash
-📦 5 tasks · 📅 Previsão: 4-6 dias
-🎯 Meta: Screenshot fiel, < 500ms, 295+ testes
-```
-
-#### Como começar o M7
-
-```bash
-# 1. Implementar position:absolute + fixed (T053)  
-# 2. Implementar text rendering com ab_glyph real (T054)
-# 3. Implementar overflow: hidden (T055)
-# 4. Otimizar performance + cache de fontes (T056)
-# 5. Testes (T057)
-# A cada task: renderizar página real, verificar visualmente, ajustar
+📦 6 tasks · ✅ 6 concluídas · 297 testes · 0 falhas
+🎯 Screenshot fiel, < 500ms, 227KB CSS externo carregado
 ```
 
 Veja `TASKS_M7.md` para specs detalhadas.
+
+---
+
+### 📋 M8 — Layout Parity (float, inline-block, flex) (Planejado)
+
+Fechar o gap de layout engine que impede renderização de páginas com grid/flex/float.
+
+| Task | Feature | Prioridade |
+|------|---------|:----------:|
+| **T059** | **display: inline-block** — participates in inline flow com width/height | 🔴 |
+| **T060** | **float: left/right** — sai do fluxo normal, posiciona lateralmente | 🔴 |
+| **T061** | **display: flex** — direction row/column, justify-content, align-items | 🟡 |
+| **T062** | **CSS Matching melhorado** — ancestor selectors, path-based matching | 🟡 |
+| **T063** | **background-image** — url(), download, render | 🟡 |
+| **T064** | **Testes M8** — 13+ testes de integração | 🔴 |
+
+```bash
+📦 6 tasks · 📅 Previsão: 5-7 dias
+🎯 Meta: books.toscrape.com com produtos lado-a-lado, 310+ testes
+```
+
+Veja `TASKS_M8.md` para specs detalhadas.
 
 ## 🧪 Testes
 
