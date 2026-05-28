@@ -378,234 +378,1151 @@ faf follow ".product_pod h3 a" --extract "h3, .price_color" \
 ---
 
 ### T039 — Click via dispatchEvent (🔴 complexo)
-**Arquivos:** `src/js/dom_bridge.rs`, `src/js/mod.rs`, `src/api/commands.rs`
+**Arquivos afetados:**
+- `src/js/dom_bridge.rs` — ADICIONAR método `.click()` no objeto Element retornado por querySelector/querySelectorAll
+- `src/api/commands.rs` — ADICIONAR subcomando `Command::Click { selector: String }` no enum Command + handler no match + struct ClickArgs com clap derive
+- `src/js/mod.rs` — ADICIONAR função `inject_window_methods(ctx)` (se não existir, criar) para expor helpers no objeto global `window`
+- `tests/m5_test.rs` — ADICIONAR 4+ testes de click
 
-**O que faz:** Simular click do usuário em elementos da página via `dispatchEvent(new MouseEvent('click'))` no runtime JS. Essencial para interagir com SPAs, paginação, modais, botões "load more".
+**O que faz:** Simular click do usuário em elementos da página via `dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))` no runtime QuickJS. Essencial para interagir com SPAs (paginação, modais, botões "load more", tabs).
 
-**Flags:** Nenhuma nova flag global. Click é acionado via JS no REPL/--stdin ou via novo subcomando `click`:
+**Flags (novo subcomando `click`):**
 ```bash
-faf click ".btn-comprar" --url https://loja.com/produto
-faf repl --url https://site.com
-> document.querySelector(".pagination a").click()
+faf click ".pagination .next" --url https://site.com/blog?page=1
+faf click "#modal .fechar" --url https://site.com --json --show-status
+
+# Click também funciona via REPL/stdin (já existe, só adicionar método no Element):
+echo 'document.querySelector("button").click()' | faf --url <url> --stdin
 ```
 
-**Implementação:**
-1. No dom_bridge.rs, estender o objeto Element retornado por querySelector/querySelectorAll com método `.click()`:
-   - `element.click()` → cria `new MouseEvent('click', { bubbles: true, cancelable: true })` e chama `dispatchEvent`
-   - Usar `rquickjs` Function para criar e disparar o evento
-   - Garantir que o evento propaga corretamente (bubbles = true)
-2. Opcional: novo subcomando `click` na CLI (Command::Click):
-   - `faf click ".btn" --url <url>` → fetch, parse, executa scripts, dispara click
-   - Re-fetch da página após click (capturar estado pós-clique)
-   - Suporta `--json`, `--show-status`, `--cache`
-3. Tratar casos especiais:
-   - `<a href="...">` links: click deve navegar (ou retornar URL alvo)
-   - `<button type="submit">`: click em form dispara submit
-   - Elementos `<option>` em `<select>`: click para selecionar
-4. **⚠️ Cuidado:** click pode disparar navegação real (link), popup, ou requisição AJAX. O FAF não executa navegação real após click — apenas retorna o evento disparado + estado do DOM. Para navegação real, o usuário usa `--follow` ou faz novo fetch.
-5. Adicionar ao `inject_dom()` para ficar disponível em REPL e --js scripts
+**Struct clap para o ClickArgs (commands.rs, logo após WaitArgs):**
+```rust
+#[derive(clap::Args, Debug)]
+pub struct ClickArgs {
+    /// Seletor CSS do elemento a clicar
+    pub selector: String,
+    /// Timeout em segundos para aguardar o elemento (default: 5)
+    #[arg(long = "timeout", default_value = "5")]
+    pub timeout: u64,
+}
+```
 
-**Testes:**
-- Servidor HTML com botão que muda texto ao clicar → FAF click → texto mudou?
-- Servidor com link que adiciona classe ao ser clicado → FAF click → classe presente?
-- Click em elemento inexistente → erro amigável
-- Teste via REPL/--stdin
+**Enum Command (commands.rs, junto com os outros):**
+```rust
+pub enum Command {
+    Links,
+    Images,
+    Metadata,
+    Query { selector: String },
+    Follow(FollowArgs),
+    Wait(WaitArgs),
+    Click(ClickArgs),        // <-- NOVO
+    Repl(ReplArgs),
+}
+```
 
-**Critério:**
-- `echo 'document.querySelector("button").click()' | faf --url <url> --stdin` → botão clicado
-- `faf click ".btn" --url <url>` → evento disparado
-- `cargo test`, `cargo clippy`
+**Implementação passo a passo:**
+
+**PASSO 1 — Adicionar .click() no objeto Element da DOM bridge (dom_bridge.rs)**
+
+Localize `fn inject_dom(ctx: &Ctx<'_>, doc: &HtmlDocument)` em dom_bridge.rs (linha ~26). Dentro dessa função, o objeto `document` é populado com métodos. Onde querySelector/querySelectorAll são definidos, ADICIONAR:
+
+```rust
+// Dentro de inject_dom(), depois de definir querySelector/querySelectorAll
+// Fazer o objeto Element prototype ter método .click()
+
+// 1. Criar função JS que simula click
+let click_fn = Function::new(ctx.clone(), |element_val: Value| -> Result<()> {
+    // element_val é o objeto Element retornado pelo JS
+    // Criar: element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    // Usar ctx.eval() ou ctx.globals() para acessar o runtime
+    
+    // CUIDADO: O objeto Element é um rquickjs Object. Para acessar dispatchEvent,
+    // precisamos pegar o objeto real do DOM (scraper::ElementRef) que está wrapado.
+    // Se o Element já é um Object JS, podemos chamar:
+    //   ctx.eval("new MouseEvent('click', {bubbles: true, cancelable: true})")
+    //   element.call("dispatchEvent", [mouse_event])
+    
+    Ok(())
+})?;
+
+// 2. Atribuir ao prototype de Element
+// Se querySelector retorna um objeto JS, adicionar a prop "click" nele
+// Melhor: retornar um objeto JS com todas as props (tag, id, classes, text, attrs, innerText, innerHTML, click)
+```
+
+⚠️ **Detalhe crítico:** O rquickjs retorna objetos JS puros (criados via `Object::new()` + `obj.set("prop", val)`). Para adicionar `.click()`, você precisa adicionar a função como propriedade do objeto retornado por querySelector. No código atual, `query_result_to_json()` retorna um `serde_json::Value` que é convertido pra JS. Em vez disso, crie manualmente um `Object` JS e adicione `.click()` como `Function`.
+
+Alternativa mais limpa: criar um prototype de Element no contexto JS global:
+```javascript
+// Avaliado via ctx.eval()
+if (typeof Element === 'undefined') {
+    globalThis.Element = class Element {
+        click() {
+            this.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        }
+    };
+}
+```
+E modificar os objetos retornados por querySelector para herdar desse prototype (usando `Object.setPrototypeOf` ou `__proto__`).
+
+**PASSO 2 — Adicionar handler do subcomando Click (commands.rs)**
+
+No match do `cli.command` (onde os outros comandos são tratados ~linha 620), ADICIONAR:
+
+```rust
+Some(Command::Click(args)) => {
+    // 1. Fetch + parse HTML (igual ao flow do Wait)
+    let resp = client.get(&url).await?;
+    let html = resp.body;
+    let doc = HtmlDocument::parse(&html);
+    
+    // 2. Query seletor
+    let elements = doc.query(&args.selector)?;
+    if elements.is_empty() {
+        anyhow::bail!("Elemento '{}' não encontrado", args.selector);
+    }
+    
+    // 3. Disparar click no primeiro elemento via JS
+    let mut rt = crate::js::JsRuntime::with_client(client.clone())?;
+    rt.set_dom(&doc)?;
+    rt.init_timers()?;
+    rt.init_fetch()?;
+    
+    // Executar scripts da página (se não --no-scripts)
+    if !cli.no_scripts {
+        let base_url = url::Url::parse(&url)?;
+        rt.execute_page_scripts(&doc, &base_url).await?;
+    }
+    
+    // Disparar click
+    let js_code = format!(
+        "document.querySelector({}).click()",
+        serde_json::to_string(&args.selector)?
+    );
+    let result = rt.eval_with_timeout(&js_code, cli.js_timeout)?;
+    
+    // 4. Re-fetch da página para capturar estado pós-clique
+    let resp2 = client.get(&url).await?;
+    let html2 = resp2.body;
+    let doc2 = HtmlDocument::parse(&html2);
+    
+    // 5. Output (reusar output::format_page_result)
+    let result = crate::api::output::FollowPageResult {
+        url: url.clone(),
+        title: doc2.title(),
+        first_heading: doc2.query("h1").ok().and_then(|r| r.into_iter().next()).map(|r| r.text),
+        text_snippet: crate::api::commands::truncate(&doc2.visible_text(), 200),
+        extracted: None,
+    };
+    
+    // Formatar output
+    if cli.json {
+        println!("{}", serde_json::to_string_pretty(&result)?);
+    } else {
+        println!("🖱️ Click em '{}': disparado", args.selector);
+        if let Some(title) = &result.title {
+            println!("📌 Título pós-click: {}", title);
+        }
+        println!("📝 {}", result.text_snippet);
+    }
+}
+```
+
+**PASSO 3 — Garantir que `truncate()` e `FollowPageResult` são acessíveis**
+
+Em commands.rs, a função `truncate()` é definida como `fn truncate(s: &str, max: usize) -> String` (linha ~784). O struct `FollowPageResult` está em `src/api/output.rs` e precisa ser importado. Verificar se já está no `use` do commands.rs:
+```rust
+use crate::api::output::FollowPageResult;
+```
+Se não estiver, ADICIONAR.
+
+**⚠️ Cuidados especiais:**
+1. **MouseEvent não existe no QuickJS por padrão.** O runtime QuickJS do rquickjs é um JS puro sem DOM. Você precisa POLYFILL o `MouseEvent` antes de usar. Criar uma string JS com a implementação e executar com `ctx.eval()`. Exemplo de polyfill mínimo:
+   ```javascript
+   if (typeof MouseEvent === 'undefined') {
+       globalThis.MouseEvent = class MouseEvent extends Event {
+           constructor(type, opts = {}) {
+               super(type, opts);
+               this.bubbles = opts.bubbles || false;
+               this.cancelable = opts.cancelable || false;
+           }
+       };
+   }
+   ```
+2. **`dispatchEvent` também não existe** nos objetos retornados por querySelector (são objetos JS puros, não Element reais). Você precisa adicionar `dispatchEvent` ao objeto, ou fazer o click funcionar sem dispatchEvent real (apenas chamar handlers JS registrados).
+3. **Abordagem alternativa:** em vez de tentar recriar o DOM event system completo, o click pode ser simulado encontrando o `<a>` no HTML e extraindo o href (para links), ou executando `onclick` diretamente se o elemento tiver atributo onclick.
+4. **Re-fetch:** após o click, a página pode ter mudado (conteúdo carregado via AJAX, navegação SPA). O re-fetch captura o estado atual. Isso pode não refletir mudanças feitas por JS pós-load (SPA). Para SPAs, o melhor é usar o REPL e executar comandos manualmente.
+
+**Testes a adicionar em tests/m5_test.rs:**
+
+Seguir o padrão EXATO dos testes existentes em tests/m4_test.rs (TcpListener + thread::spawn + Cli::parse_from + run + assert):
+
+```rust
+// Teste 1: Botão que muda texto ao clicar
+fn start_click_button_server() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buf = [0u8; 4096];
+        let n = stream.read(&mut buf).unwrap();
+        let request = String::from_utf8_lossy(&buf[..n]);
+        let body = r#"<html><body>
+            <button id="btn" onclick="this.textContent='clicado'">Clique</button>
+        </body></html>"#;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(), body
+        );
+        let _ = stream.write_all(response.as_bytes());
+    });
+    port
+}
+
+#[tokio::test]
+async fn test_click_changes_text() {
+    let port = start_click_button_server();
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "--js", "document.querySelector('#btn').textContent",
+        "--stdin",
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok());
+    // O texto do botão mudou?
+}
+```
+
+**Critério de aceite:**
+```bash
+# Via subcomando click
+faf click ".btn" --url http://127.0.0.1:PORT/
+# → "🖱️ Click em '.btn': disparado"
+
+# Via REPL/stdin
+echo 'document.querySelector("button").click()' | faf --url http://127.0.0.1:PORT/ --stdin
+# → click disparado
+
+# Click em elemento inexistente
+faf click ".nao-existe" --url http://127.0.0.1:PORT/
+# → Error: Elemento '.nao-existe' não encontrado
+
+cargo test tests::m5_test  # 4+ testes passando
+cargo clippy  # 0 warnings
+```
 
 ---
 
 ### T040 — Formulários: fill, select, submit (🟡 médio)
-**Arquivos:** `src/js/dom_bridge.rs`, `src/api/commands.rs` (subcomando `fill` ou flag `--fill`)
+**Arquivos afetados:**
+- `src/js/dom_bridge.rs` — ADICIONAR no inject_dom(): helper `fill_form(selector, data)`, garantir que `.value`, `.checked`, `.submit()` funcionem nos objetos Element
+- `src/api/commands.rs` — ADICIONAR handler no REPL/stdin (já deve funcionar se bridge DOM estiver correta). NÃO precisa de novo subcomando — forms são manipulados via JS/REPL.
+- `tests/m5_test.rs` — ADICIONAR 3+ testes de form
 
-**O que faz:** Preencher campos de formulário, selecionar opções e submeter, tudo via JS bridge. Permite simular login, busca, cadastro.
+**O que faz:** Permitir preencher campos de formulário, selecionar opções, marcar checkboxes e submeter formulários via JS bridge. Tudo via REPL/stdin.
 
-**Flags/Comando:**
+**Como usar (nenhuma flag nova — tudo via JS):**
 ```bash
-# Modo 1: via JS no REPL
-faf repl --url https://site.com/login
-> document.querySelector("#email").value = "user@test.com"
-> document.querySelector("#senha").value = "123456"
-> document.querySelector("form").submit()
+# Preencher input
+echo 'document.querySelector("#email").value = "user@test.com"' | faf --stdin --url <url>
+echo 'document.querySelector("#email").value' | faf --stdin --url <url>
+# → "user@test.com"
 
-# Modo 2: subcomando fill (opcional, futura expansão)
-# faf fill "input[name=email]" --value "user@test.com" --url ...
+# Selecionar option
+echo 'document.querySelector("select[name=pais]").value = "BR"' | faf --stdin --url <url>
+
+# Checkbox
+echo 'document.querySelector("#aceito").checked = true' | faf --stdin --url <url>
+
+# Submeter form
+echo 'document.querySelector("form").submit()' | faf --stdin --url <url>
 ```
 
-**Implementação:**
-1. Garantir que `.value = "texto"` funcione em `<input>`, `<textarea>`, `<select>` via bridge DOM ↔ JS (já deve funcionar com rquickjs)
-2. Opcional: helper `fill_form(selector, data)` no dom_bridge:
-   - Aceita objeto `{ campo: valor }` e preenche automaticamente
-   - Suporta input[type=text/email/password], textarea, select (value), checkbox (checked), radio
-3. `.submit()` em elemento `<form>` → dispara submit (mas **não** segue a ação — retorna method + action para o usuário decidir)
-4. Suporte a `FormData` e `URLSearchParams` no runtime JS (se não existir, criar polyfill)
+**⚠️ Requer T039 (click) concluído** — `.submit()` em form dispara os mesmos mecanismos de evento.
 
-**Testes:**
-- Servidor com formulário → FAF preenche campos → `.value` reflete o valor setado
-- Select option → .value = "opt2" → option selecionada
-- Checkbox → .checked = true → checked
+**Implementação passo a passo:**
 
-**Critério:**
-- `echo 'document.querySelector("#email").value = "test@test.com"' | faf --stdin --url <url>` → campo preenchido
-- `echo 'document.querySelector("form").submit()' | faf --stdin --url <url>` → submit disparado
-- `cargo test`, `cargo clippy`
+**PASSO 1 — Garantir que objetos Element tenham `.value` (dom_bridge.rs)**
+
+No `inject_dom()`, os objetos retornados por querySelector/querySelectorAll são construídos via `query_result_to_json()`. Essa função retorna campos como `text`, `innerText`, `innerHTML`, `attributes`. O `.value` NÃO é um atributo HTML — é uma propriedade do elemento JS.
+
+Para suportar `.value = "texto"`, você PRECISA que o objeto Element JS tenha um setter/getter para `value`. Como os objetos são JS puros (não Element reais), você tem duas opções:
+
+**Opção A (recomendada):** Em vez de retornar objetos JS planos, retornar objetos com getter/setter via `Object.defineProperty()`:
+
+```javascript
+// Avaliar no contexto JS:
+var elementProto = {
+    get value() { return this.attributes?.value || this.text || ''; },
+    set value(v) { this.text = v; this.attributes = this.attributes || {}; this.attributes.value = v; },
+    get checked() { return this.attributes?.checked === 'true'; },
+    set checked(v) { 
+        this.attributes = this.attributes || {}; 
+        this.attributes.checked = v ? 'true' : 'false'; 
+    },
+    submit() { /* dispara evento de submit */ },
+    click() { /* implementado no T039 */ }
+};
+```
+
+E aplicar `Object.setPrototypeOf(element, elementProto)` em cada elemento retornado por querySelector.
+
+**Opção B (alternativa):** Adicionar `value` e `checked` como propriedades no `query_result_to_json()` quando o elemento for `<input>`, `<select>` ou `<textarea>`:
+```rust
+// No match do tag em query_result_to_json(), adicionar:
+let value = if ["input", "textarea", "select"].contains(&result.tag.as_str()) {
+    result.attributes.get("value").cloned()
+} else {
+    None
+};
+
+json!({
+    // ... existing fields ...
+    "value": value,
+    "checked": result.attributes.get("checked").map(|v| v == "true" || v == "checked"),
+})
+```
+
+**PASSO 2 — Suporte a submit (dom_bridge.rs)**
+
+O `.submit()` de um `<form>` não dispara um evento `submit` no elemento — ele ENVIA o formulário diretamente. No FAF, não temos navegação real. Então `.submit()` deve:
+
+1. Coletar todos os inputs com name + value dentro do form
+2. Construir querystring: `name1=value1&name2=value2`
+3. Extrair `method` (GET/POST) e `action` do form
+4. Se method=GET: retornar a URL com querystring para o usuário
+5. Se method=POST: retornar os dados para o usuário
+6. **⚠️ NÃO fazer o request** — apenas informar o que seria enviado
+
+Implementação em JS polyfill:
+```javascript
+if (typeof HTMLFormElement === 'undefined') {
+    globalThis.HTMLFormElement = class HTMLFormElement {
+        submit() {
+            var form = this;
+            var method = (form.attributes.method || 'get').toUpperCase();
+            var action = form.attributes.action || window.location.href;
+            var inputs = form.querySelectorAll('input, select, textarea') || [];
+            var data = {};
+            inputs.forEach(function(el) {
+                if (el.name) data[el.name] = el.value;
+            });
+            // Retornar como resultado da avaliação JS
+            return JSON.stringify({ method: method, action: action, data: data });
+        }
+    };
+}
+```
+
+**PASSO 3 — Suporte a FormData e URLSearchParams (js/mod.rs ou engine.rs)**
+
+Se o usuário tentar usar `new FormData(form)` ou `new URLSearchParams()`, esses construtores não existem no QuickJS puro. ADICIONAR polyfills:
+
+```javascript
+// Polyfill URLSearchParams
+if (typeof URLSearchParams === 'undefined') {
+    globalThis.URLSearchParams = class URLSearchParams {
+        constructor(init) {
+            this.params = {};
+            if (typeof init === 'string') {
+                init.split('&').forEach(pair => {
+                    var [k, v] = pair.split('=').map(decodeURIComponent);
+                    this.params[k] = v;
+                });
+            }
+        }
+        get(name) { return this.params[name]; }
+        set(name, value) { this.params[name] = value; }
+        toString() { 
+            return Object.entries(this.params)
+                .map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v))
+                .join('&'); 
+        }
+    };
+}
+```
+
+Estes polyfills podem ser injetados UMA VEZ no runtime, no método `JsRuntime::new()` ou em `init_fetch()` (já que fetch também usa URLSearchParams).
+
+**Testes a adicionar em tests/m5_test.rs:**
+
+Seguir o padrão TcpListener + thread::spawn:
+
+```rust
+// Servidor com formulário HTML
+fn start_form_server() -> u16 { ... }
+// Servidor retorna HTML com:
+// <form action="/login" method="POST">
+//   <input name="email" type="text">
+//   <input name="senha" type="password">
+//   <select name="pais"><option value="BR">Brasil</option></select>
+//   <input name="aceito" type="checkbox">
+//   <button type="submit">Entrar</button>
+// </form>
+
+#[tokio::test]
+async fn test_fill_input() {
+    // Preenche input e verifica valor
+}
+
+#[tokio::test]
+async fn test_select_option() {
+    // Seleciona option e verifica
+}
+
+#[tokio::test]
+async fn test_checkbox() {
+    // Marca checkbox e verifica
+}
+```
+
+**Critério de aceite:**
+```bash
+echo 'document.querySelector("#email").value = "teste@test.com"' | faf --stdin --url <url>
+echo 'document.querySelector("#email").value' | faf --stdin --url <url>
+# → "teste@test.com"
+
+echo 'document.querySelector("#aceito").checked = true' | faf --stdin --url <url>
+echo 'document.querySelector("#aceito").checked' | faf --stdin --url <url>
+# → true
+
+cargo test tests::m5_test  # 3+ testes passando
+cargo clippy  # 0 warnings
+```
 
 ---
 
 ### T041 — Screenshot via tiny-skia (🔴 complexo)
-**Arquivos:** `src/render/` (novo módulo), `src/render/mod.rs`, `src/render/screenshot.rs`, `src/api/commands.rs` (subcomando `screenshot`), `Cargo.toml` (tiny-skia, font-kit, image)
+**Arquivos afetados:**
+- `Cargo.toml` — ADICIONAR dependências: `tiny-skia = "0.11"`, `font-kit = "0.14"`, `image = "0.25"`
+- `src/render/mod.rs` — CRIAR novo módulo com `pub mod screenshot;`
+- `src/render/screenshot.rs` — CRIAR pipeline de renderização completo
+- `src/api/commands.rs` — ADICIONAR subcomando `Command::Screenshot(ScreenshotArgs)` + handler
+- `src/lib.rs` — ADICIONAR `pub mod render;`
+- `tests/m5_test.rs` — ADICIONAR 3+ testes de screenshot
 
-**O que faz:** Renderizar o HTML da página em uma imagem PNG usando o engine CSS já existente + tiny-skia para rasterização. Útil para debugging visual, thumbnails, e documentação.
+**O que faz:** Renderizar o HTML de uma página em imagem PNG usando o CSS engine existente + tiny-skia. Gera uma representação visual aproximada da página (não pixel-perfect).
 
-**Flags/Comando:**
+**Flags (novo subcomando `screenshot`):**
 ```bash
-faf screenshot https://books.toscrape.com/ --output pagina.png
-faf screenshot https://site.com --width 1920 --height 1080 --output preview.png
+faf screenshot https://books.toscrape.com/ --width 1280 --output pagina.png
+faf screenshot https://site.com --width 1920 --height 1080 --json
 ```
 
-**Implementação:**
-1. Criar módulo `src/render/`:
-   - `screenshot.rs` — orquestra renderização: parse HTML → parse CSS → layout → paint
-2. Re-utilizar componentes existentes do CSS engine:
-   - `css::layout::BoxModel` — dimensões dos elementos
-   - `css::style::ComputedStyle` — cores, fontes, display
-   - `css::color::Color` — conversão de cor
-3. Pipeline de renderização:
-   - Parse HTML (já existe) → DOM tree
-   - Parse CSS inline + da página (já existe)
-   - Computar estilos (já existe) → elementos com posição/tamanho
-   - **Paint:** desenhar cada elemento como retângulo com cor de fundo + texto
-   - Usar `tiny-skia` para desenhar pixels em um canvas
-   - Usar `font-kit` ou `rusttype` para renderizar texto nas posições corretas
-4. Output: salvar como PNG via `image` ou `tiny-skia`'s `save_png`
-5. Flags:
-   - `--width` — largura do viewport (default: 1280)
-   - `--height` — altura do viewport (default: 0 = scroll inteiro)
-   - `--output` — caminho do PNG (default: `screenshot-<timestamp>.png`)
-6. **⚠️ Cuidados:**
-   - Isso é uma renderização **aproximada**, não pixel-perfect como Chrome
-   - Prioridade: layout estável e cores corretas, não fidelidade absoluta
-   - Texto sem WebGL ou aceleração — usar font bitmap simples
-   - Elementos com `display: none` não são renderizados
-7. Não tentar renderizar:
-   - Imagens embutidas (`<img>` tags — custo muito alto por enquanto)
+**Struct clap (commands.rs, após ClickArgs):**
+```rust
+#[derive(clap::Args, Debug)]
+pub struct ScreenshotArgs {
+    /// URL para capturar
+    pub url: String,
+    /// Largura do viewport em pixels (default: 1280)
+    #[arg(long = "width", default_value = "1280")]
+    pub width: u32,
+    /// Altura do viewport em pixels (default: 0 = scroll inteiro)
+    #[arg(long = "height", default_value = "0")]
+    pub height: u32,
+    /// Caminho do arquivo PNG de saída
+    #[arg(long = "output", default_value = "screenshot.png")]
+    pub output: String,
+}
+```
+
+**Enum Command — ADICIONAR:**
+```rust
+pub enum Command {
+    // ... existentes ...
+    Wait(WaitArgs),
+    Click(ClickArgs),
+    Screenshot(ScreenshotArgs),  // <-- NOVO
+    Repl(ReplArgs),
+}
+```
+
+**Implementação passo a passo:**
+
+**PASSO 1 — Criar src/render/screenshot.rs (NOVO ARQUIVO)**
+
+Estrutura do arquivo:
+```rust
+use crate::css::layout::BoxModel;
+use crate::css::style::ComputedStyle;
+use crate::dom::HtmlDocument;
+use tiny_skia::{Canvas, Paint, PathBuilder, Pixmap, Transform};
+use std::path::Path;
+
+/// Configuração da renderização
+pub struct ScreenshotConfig {
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Renderiza um HtmlDocument em um PNG, salvando no caminho especificado.
+pub fn render_to_image(
+    doc: &HtmlDocument,
+    config: &ScreenshotConfig,
+    output_path: &str,
+) -> anyhow::Result<()> {
+    // 1. Parse CSS da página
+    let css_text = doc.extract_css().unwrap_or_default();
+    let stylesheet = crate::css::parser::parse_css(&css_text)?;
+    let styles = crate::css::style::compute_styles(doc, &stylesheet);
+    
+    // 2. Criar canvas
+    let width = config.width;
+    let height = if config.height > 0 {
+        config.height
+    } else {
+        // Altura total do documento (soma das alturas dos elementos)
+        compute_document_height(doc, &styles)
+    };
+    
+    let mut pixmap = Pixmap::new(width, height)
+        .ok_or_else(|| anyhow::anyhow!("Falha ao criar pixmap {}x{}", width, height))?;
+    
+    // 3. Fundo branco
+    let mut paint = Paint::default();
+    paint.set_color_rgba8(255, 255, 255, 255);
+    pixmap.fill_rect(
+        tiny_skia::Rect::from_xywh(0.0, 0.0, width as f32, height as f32).unwrap(),
+        &paint,
+        Transform::identity(),
+        None,
+    );
+    
+    // 4. Renderizar elementos visíveis do body
+    if let Some(body) = doc.query("body").ok().and_then(|r| r.into_iter().next()) {
+        // Percorrer elementos filho recursivamente
+        render_element(&body, doc, &styles, &mut pixmap, 0.0, 0.0, width as f32)?;
+    }
+    
+    // 5. Salvar PNG
+    pixmap.save_png(output_path)
+        .map_err(|e| anyhow::anyhow!("Falha ao salvar PNG: {}", e))?;
+    
+    Ok(())
+}
+
+/// Renderiza um elemento e seus filhos recursivamente.
+fn render_element(
+    element: &crate::dom::QueryResult,
+    doc: &HtmlDocument,
+    styles: &std::collections::HashMap<String, ComputedStyle>,
+    pixmap: &mut Pixmap,
+    parent_x: f32,
+    parent_y: f32,
+    parent_width: f32,
+) -> anyhow::Result<()> {
+    // 1. Obter computed style
+    let style = styles.get(&element.id.clone().unwrap_or_default())
+        .unwrap_or(&ComputedStyle::default());
+    
+    // 2. Pular display: none
+    if style.display == "none" {
+        return Ok(());
+    }
+    
+    // 3. Calcular posição e tamanho
+    let x = parent_x + style.margin_left;
+    let y = parent_y + style.margin_top;
+    let w = style.width.unwrap_or(parent_width - style.margin_left - style.margin_right);
+    let h = style.height.unwrap_or(16.0); // altura mínima
+    
+    // 4. Desenhar background-color
+    if let Some(bg) = &style.background_color {
+        let color = crate::css::color::parse_color(bg);
+        if let Some(c) = color {
+            let mut paint = Paint::default();
+            paint.set_color_rgba8(c.r, c.g, c.b, (c.a * 255.0) as u8);
+            let rect = tiny_skia::Rect::from_xywh(x, y, w, h).unwrap_or_default();
+            pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+        }
+    }
+    
+    // 5. Desenhar texto
+    if !element.text.is_empty() {
+        // Usar font-kit para carregar fonte
+        // Desenhar texto com tiny-skia (ou usar biblioteca de texto)
+        // Por agora: apenas desenhar um placeholder visual
+        let mut paint = Paint::default();
+        let fg = style.color.as_deref().unwrap_or("#000000");
+        if let Some(c) = crate::css::color::parse_color(fg) {
+            paint.set_color_rgba8(c.r, c.g, c.b, 255);
+        }
+        // Desenhar o texto como retângulo simples + cor
+        // NOTA: renderização de texto REAL requer font-kit + layout
+        // Para MVP, desenhar um retângulo com a cor do texto
+    }
+    
+    // 6. Renderizar filhos recursivamente
+    // Se o QueryResult tiver filhos, iterar sobre eles
+    // (O HtmlDocument::query() atual não expõe filhos diretamente.
+    //  Para renderização recursiva, precisamos de uma API de DOM tree.
+    //  ALTERNATIVA: usar scraper::ElementRef diretamente se exposto.)
+    
+    Ok(())
+}
+
+/// Calcula a altura total do documento somando alturas dos filhos do body.
+fn compute_document_height(
+    doc: &HtmlDocument,
+    styles: &std::collections::HashMap<String, ComputedStyle>,
+) -> u32 {
+    // Placeholder: altura fixa para MVP
+    800
+}
+```
+
+**PASSO 2 — Conectar no lib.rs**
+
+Em `src/lib.rs`, ADICIONAR:
+```rust
+pub mod render;
+```
+
+**PASSO 3 — Handler do subcomando (commands.rs)**
+
+No match do `cli.command`:
+```rust
+Some(Command::Screenshot(args)) => {
+    // Fetch da URL
+    let resp = client.get(&args.url).await?;
+    let html = resp.body;
+    let doc = HtmlDocument::parse(&html);
+    
+    // Renderizar
+    let config = render::screenshot::ScreenshotConfig {
+        width: args.width,
+        height: args.height,
+    };
+    
+    render::screenshot::render_to_image(&doc, &config, &args.output)?;
+    
+    println!("📸 Screenshot salvo em: {}", args.output);
+}
+```
+
+**⚠️ Cuidados especiais:**
+
+1. **Escopo limitado para MVP:** Este screenshot é uma renderização aproximada. Não tente fazer pixel-perfect. Priorize:
+   - Layout básico (elementos empilhados verticalmente)
+   - Cores de fundo e texto
+   - Texto em posições aproximadas (usando font bitmap)
+   - `display: none` respeitado
+
+2. **Não tentar renderizar:**
+   - Imagens (`<img>`, `<picture>`, `<svg>`)
+   - CSS complexo (flexbox, grid, float, position: absolute/fixed)
    - Iframes, vídeos, canvas
-   - CSS avançado: flexbox, grid, position, float, overflow
+   - Web fonts (usar fonte monospace padrão do sistema)
+   - Overflow, scroll, clip
 
-**Testes:**
-- Servidor com HTML simples (h1 colorido, parágrafo) → screenshot existe e não está vazio
-- Servidor com display:none → elemento não aparece na screenshot
-- Servidor sem CSS → renderização com defaults
-- Testar dimensões: 800x600 vs 1920x1080
+3. **Dependências Cargo.toml:**
+   ```toml
+   tiny-skia = "0.11"
+   font-kit = "0.14"  # Para carregar fontes do sistema
+   image = "0.25"     # Fallback para salvar PNG se tiny-skia não der conta
+   ```
+   Verificar compatibilidade com a edition 2024. Se alguma dep não compilar, usar alternativa.
 
-**Critério:**
-- `faf screenshot https://books.toscrape.com/ --width 800 --output test.png` → test.png gerado com ≥ 1KB
-- `cargo test`, `cargo clippy`
+4. **Nested runtime:** O screenshot NÃO usa tokio — é puramente síncrono (parse CSS + tiny-skia paint). Isso evita o nested runtime panic.
+
+5. **API do HtmlDocument:** O módulo `dom` atualmente expõe `query(selector)` que retorna `Vec<QueryResult>` achatado (não uma árvore). Para renderização hierárquica, você PRECISA de acesso à árvore DOM real. Opções:
+   - Opção A: Expor `scraper::Html` internamente via método `doc.inner_html()` e re-parsar
+   - Opção B: Usar `scraper::ElementRef` diretamente (mais complexo)
+   - **Opção C (recomendada para MVP):** Renderizar APENAS os elementos do `body` que são retornados por `query("*")`, ordenados por posição no HTML (que scraper respeita). Isso dá uma renderização linear (como um documento de texto) sem hierarquia real.
+
+**Testes (tests/m5_test.rs):**
+
+```rust
+/// Servidor com HTML simples para screenshot
+fn start_screenshot_server() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let body = r#"<html><head><style>h1 { color: red; }</style></head>
+            <body><h1>Titulo</h1><p>Paragrafo</p></body></html>"#;
+        let response = format!("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
+        let _ = stream.write_all(response.as_bytes());
+    });
+    port
+}
+
+#[tokio::test]
+async fn test_screenshot_generated() {
+    let port = start_screenshot_server();
+    let output = format!("/tmp/faf_test_screenshot_{}.png", std::process::id());
+    let cli = Cli::parse_from([
+        "faf",
+        "screenshot",
+        &format!("http://127.0.0.1:{}/", port),
+        "--width", "800",
+        "--output", &output,
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok());
+    assert!(std::path::Path::new(&output).exists(), "PNG deve existir");
+    let metadata = std::fs::metadata(&output).unwrap();
+    assert!(metadata.len() > 500, "PNG deve ter > 500 bytes");
+    let _ = std::fs::remove_file(&output);
+}
+```
+
+**Critério de aceite:**
+```bash
+faf screenshot https://books.toscrape.com/ --width 800 --output /tmp/faf-test.png
+# → "📸 Screenshot salvo em: /tmp/faf-test.png"
+ls -la /tmp/faf-test.png  # Deve existir com ≥ 1KB
+
+cargo test tests::m5_test  # 3+ testes passando
+cargo clippy  # 0 warnings
+```
 
 ---
 
 ### T042 — Watch Mode: monitorar mudanças (🟡 médio)
-**Arquivos:** `src/api/commands.rs` (subcomando `watch`), `src/js/engine.rs` (timeout/loop)
+**Arquivos afetados:**
+- `src/api/commands.rs` — ADICIONAR subcomando `Command::Watch(WatchArgs)` + struct WatchArgs + handler com loop tokio
+- `src/utils/config.rs` — ADICIONAR campo `watch_interval` se necessário (ou usar flag inline no WatchArgs)
+- `tests/m5_test.rs` — ADICIONAR 3+ testes de watch
 
-**O que faz:** Monitorar periodicamente uma URL (ou elemento) e notificar quando o conteúdo mudar. Útil para:
-- Preços de produtos que mudam
-- Status de pedidos
-- Disponibilidade de estoque
-- Notícias novas
+**O que faz:** Monitorar periodicamente uma URL (ou elemento específico) e notificar quando o conteúdo mudar. Essencial para:
+- Preços de produtos que flutuam
+- Status de pedidos (em trânsito → entregue)
+- Disponibilidade de estoque (esgotado → disponível)
+- Novas notícias/resultados de busca
 
-**Flags/Comando:**
+**Flags (novo subcomando `watch`):**
 ```bash
-faf watch ".price" --url https://loja.com/produto --interval 30
+faf watch ".price" --url https://loja.com/produto --interval 30 --max-checks 5
 # → [14:30:01] £51.77
-# → [14:30:31] £49.99 ⚠️ MUDOU!
+# → [14:30:31] £49.99 ⚠️ MUDOU! (antes: £51.77)
+# → [14:31:01] £49.99
+# → [14:31:31] £49.99
 
 faf watch "h1" --url https://site.com --interval 60 --json
 ```
 
-**Implementação:**
-1. Subcomando `Command::Watch`:
-   - `selector` — elemento a monitorar (opcional: monitorar página inteira)
-   - `--interval <s>` — intervalo entre verificações (default: 30)
-   - `--max-checks <N>` — parar após N verificações (default: 0 = infinito)
-2. Loop:
-   - Fetch URL + cache (usar `--cache` para não sobrecarregar)
-   - Se selector: extrair texto/atributo do elemento
-   - Comparar com valor anterior
-   - Se mudou: printar ⚠️ com timestamp + valor antigo → novo
-3. Output:
-   - Timestamp + valor atual
-   - Se mudou: destaque visual + diff
-   - `--json` para pipe em scripts
-4. **⚠️ Cuidados:**
-   - Requer loop infinito — usar `tokio::time::interval`
-   - Respeitar rate limiting (não floodar sites)
-   - Cache obrigatório pra evitar múltiplos fetches desnecessários
-   - Timeout: `--timeout` global se aplica
+**Struct clap (commands.rs, após ScreenshotArgs):**
+```rust
+#[derive(clap::Args, Debug)]
+pub struct WatchArgs {
+    /// Seletor CSS do elemento a monitorar (opcional: monitora a página inteira)
+    pub selector: Option<String>,
+    /// URL para monitorar
+    #[arg(long = "url")]
+    pub url: String,
+    /// Intervalo em segundos entre verificações (default: 30)
+    #[arg(long = "interval", default_value = "30")]
+    pub interval: u64,
+    /// Número máximo de verificações (0 = infinito, default: 0)
+    #[arg(long = "max-checks", default_value = "0")]
+    pub max_checks: u64,
+}
+```
 
-**Testes:**
-- Servidor que muda conteúdo após N requests → watch detecta mudança
-- Watch com --max-checks 2 → para após 2 iterações
-- Watch sem mudança → apenas loga timestamp + valor
+**Enum Command — ADICIONAR:**
+```rust
+pub enum Command {
+    // ... existentes ...
+    Screenshot(ScreenshotArgs),
+    Watch(WatchArgs),  // <-- NOVO
+    Repl(ReplArgs),
+}
+```
 
-**Critério:**
-- `faf watch "h1" --url <url> --interval 1 --max-checks 2` → executa 2 vezes e termina
-- `cargo test`, `cargo clippy`
+**Implementação passo a passo:**
+
+**PASSO 1 — Handler do watch (commands.rs)**
+
+```rust
+Some(Command::Watch(args)) => {
+    let mut previous_value: Option<String> = None;
+    let mut checks: u64 = 0;
+    
+    loop {
+        // Verificar limite
+        if args.max_checks > 0 && checks >= args.max_checks {
+            break;
+        }
+        
+        // Fetch + parse
+        let resp = client.get(&args.url).await?;
+        let html = resp.body;
+        let doc = HtmlDocument::parse(&html);
+        
+        // Extrair valor
+        let current_value = if let Some(ref selector) = args.selector {
+            // Extrair texto do primeiro elemento que match
+            doc.query(selector)
+                .ok()
+                .and_then(|r| r.into_iter().next())
+                .map(|r| r.text)
+                .unwrap_or_else(|| "(elemento não encontrado)".to_string())
+        } else {
+            // Monitorar página inteira (texto visível + título)
+            let title = doc.title().unwrap_or_default();
+            let text = doc.visible_text();
+            let snippet = if text.len() > 100 {
+                format!("{}...", &text[..100])
+            } else {
+                text.clone()
+            };
+            format!("{} | {}", title, snippet)
+        };
+        
+        // Timestamp
+        let now = chrono::Local::now().format("%H:%M:%S").to_string();
+        // ⚠️ Se chrono não estiver nas deps, usar std::time::SystemTime
+        
+        // Comparar com valor anterior
+        if let Some(ref prev) = previous_value {
+            if *prev != current_value {
+                // MUDOU!
+                if cli.json {
+                    println!(r#"{{"time":"{}","selector":"{}","previous":"{}","current":"{}","changed":true}}"#,
+                        now,
+                        args.selector.as_deref().unwrap_or("*"),
+                        prev.replace('"', "\\\""),
+                        current_value.replace('"', "\\\""));
+                } else {
+                    println!("[{}] ⚠️ MUDOU! (antes: {}) → {}", now, prev, current_value);
+                }
+            } else {
+                if cli.json {
+                    println!(r#"{{"time":"{}","value":"{}","changed":false}}"#,
+                        now,
+                        current_value.replace('"', "\\\""));
+                } else {
+                    println!("[{}] {}", now, current_value);
+                }
+            }
+        } else {
+            // Primeira execução
+            if cli.json {
+                println!(r#"{{"time":"{}","value":"{}","changed":false,"first":true}}"#,
+                    now,
+                    current_value.replace('"', "\\\""));
+            } else {
+                println!("[{}] {}", now, current_value);
+            }
+        }
+        
+        previous_value = Some(current_value);
+        checks += 1;
+        
+        // ⚠️ Importante: se --max-checks == 0, loop infinito.
+        // O usuário deve Ctrl+C para parar.
+        // Para evitar loop infinito em testes, sempre incrementamos checks
+        // e respeitamos max_checks.
+        
+        // Aguardar intervalo (exceto na última iteração)
+        if args.max_checks == 0 || checks < args.max_checks {
+            tokio::time::sleep(std::time::Duration::from_secs(args.interval)).await;
+        }
+    }
+}
+```
+
+**PASSO 2 — Registrar subcomando no enum + parser**
+
+O clap derive já cuida do parse. Apenas adicionar ao enum e ao match.
+
+**⚠️ Cuidados especiais:**
+
+1. **Loop infinito:** watch com `--max-checks 0` fica em loop até Ctrl+C. IMPORTANTE: o runtime tokio precisa de `ctrl_c` handler ou o usuário só sai matando o processo. Para segurança, limitar a 1000 checks se max_checks=0 e emitir warning.
+
+2. **Rate limiting:** watch bate no servidor a cada `--interval` segundos. Para intervalos < 5s, emitir warning sobre possível bloqueio.
+
+3. **Cache:** watch DEVE usar `--cache` se disponível para não sobrecarregar o servidor. Mas cuidado: cache pode mascarar mudanças reais. Por default, watch NÃO usa cache (faz fetch real a cada vez). Se `--cache` for passado explicitamente, usar cache com TTL curto.
+
+4. **JSON output:** o `--json` produz linhas JSON separadas (JSONL), uma por verificação. Cada linha tem: time, selector, value, changed, (opcional) previous.
+
+5. **Dependência chrono:** Se quiser timestamp formatado, precisa de `chrono = "0.4"` no Cargo.toml. Alternativa sem chrono: usar `std::time::SystemTime::now()` e formatar manualmente.
+
+**Testes (tests/m5_test.rs):**
+
+```rust
+/// Servidor que alterna conteúdo entre requests
+fn start_watch_changing_server() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let counter = Arc::new(AtomicU64::new(0));
+    let c = counter.clone();
+    thread::spawn(move || {
+        for _ in 0..4 {
+            let (mut stream, _) = listener.accept().unwrap();
+            let count = c.fetch_add(1, Ordering::SeqCst);
+            let body = format!("<html><body><h1>Valor: {}</h1></body></html>", count);
+            let response = format!("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
+            let _ = stream.write_all(response.as_bytes());
+        }
+    });
+    port
+}
+
+#[tokio::test]
+async fn test_watch_detect_change() {
+    let port = start_watch_changing_server();
+    let cli = Cli::parse_from([
+        "faf",
+        "watch",
+        "h1",
+        "--url", &format!("http://127.0.0.1:{}/", port),
+        "--interval", "1",
+        "--max-checks", "3",
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok());
+}
+```
+
+**Critério de aceite:**
+```bash
+faf watch "h1" --url http://127.0.0.1:PORT/ --interval 1 --max-checks 2
+# → [HH:MM:SS] Valor: 0
+# → [HH:MM:SS] ⚠️ MUDOU! (antes: Valor: 0) → Valor: 1
+
+cargo test tests::m5_test  # 3+ testes passando
+cargo clippy  # 0 warnings
+```
 
 ---
 
 ### T043 — Scroll e Navegação via JS (🟢 pequeno)
-**Arquivos:** `src/js/dom_bridge.rs`
+**Arquivos afetados:**
+- `src/js/dom_bridge.rs` — ADICIONAR no inject_dom(): helpers `window.scrollTo`, `window.scrollBy`, `element.scrollIntoView`
+- `src/js/mod.rs` — Se não existir função de injeção de window methods, ADICIONAR
+- `tests/m5_test.rs` — ADICIONAR 2+ testes de scroll
 
-**O que faz:** Adicionar métodos de scroll e navegação na bridge DOM para interagir com páginas longas e conteúdo lazy-loaded.
+**O que faz:** Adicionar métodos de scroll e navegação na bridge DOM para interagir com páginas longas e conteúdo lazy-loaded. Essencial para:
+- Scroll infinito (combinado com T039 click em "load more")
+- Páginas de documentação longa
+- Resultados de busca que carregam ao scrollar
 
-**Métodos:**
+**Métodos a expor (via polyfill JS no runtime):**
 ```javascript
-window.scrollTo(0, 1000)
-window.scrollBy(0, 500)
-document.querySelector(".produtos").scrollIntoView()
+// scrollTo — scroll absoluto
+window.scrollTo(0, 1000);
+window.scrollTo({ top: 1000, behavior: 'smooth' });
+
+// scrollBy — scroll relativo
+window.scrollBy(0, 500);
+
+// scrollIntoView — scroll até elemento
+document.querySelector(".footer").scrollIntoView();
+document.querySelector(".footer").scrollIntoView({ behavior: 'smooth', block: 'start' });
 ```
 
-**Implementação:**
-1. No dom_bridge.rs, expor funções helper no objeto `window`:
-   - `scrollTo(x, y)` — scroll da janela
-   - `scrollBy(x, y)` — scroll relativo
-   - `scrollIntoView(selector)` — scroll até elemento
-2. Todas implementadas via `window.scrollTo()` e `element.scrollIntoView()` no runtime JS
-3. Após scroll, re-extrair conteúdo visível da página (se `--extract` foi usado)
-4. **⚠️ Cuidado:** scroll não carrega novo conteúdo — depende de event listeners na página (scroll infinito). Para isso, combinar com T039 (click em "load more") ou T042 (watch mode).
+**⚠️ IMPORTANTE:** O FAF não tem uma "janela" real com viewport. O scroll é SIMULADO — mantemos uma posição Y global no runtime JS. A utilidade prática é:
+1. Mudar o foco de extração: após scroll, re-executar `querySelector`/`extract` para capturar elementos que estavam fora da "viewport"
+2. Disparar event listeners de scroll que a página possa ter (scroll infinito, lazy loading)
+3. A posição Y simulada fica em `window.pageYOffset`
 
-**Testes:**
-- Servidor com div grande → scrollTo → scrollBy → scrollIntoView executam sem erro
-- scrollIntoView em elemento invisível → erro tratado
+**Implementação (dom_bridge.rs, no inject_dom()):**
 
-**Critério:**
-- `echo 'window.scrollTo(0, document.body.scrollHeight)' | faf --stdin --url <url>` → scroll executado
-- `cargo test`, `cargo clippy`
+```javascript
+// Polyfill scroll simulado
+// Avaliar no contexto JS via ctx.eval()
+(function() {
+    if (typeof window === 'undefined') { globalThis.window = {}; }
+    
+    var scrollY = 0;
+    
+    window.scrollY = 0;
+    window.pageYOffset = 0;
+    
+    window.scrollTo = function(xOrOpts, y) {
+        if (typeof xOrOpts === 'object') {
+            y = xOrOpts.top || 0;
+        } else if (y === undefined) {
+            y = xOrOpts || 0;
+        }
+        scrollY = Math.max(0, y);
+        window.scrollY = scrollY;
+        window.pageYOffset = scrollY;
+        // Disparar evento de scroll (se houver listeners)
+        var event = new Event('scroll');
+        window.dispatchEvent(event);
+    };
+    
+    window.scrollBy = function(xOrOpts, y) {
+        if (typeof xOrOpts === 'object') {
+            y = xOrOpts.top || 0;
+        } else if (y === undefined) {
+            y = xOrOpts || 0;
+        }
+        window.scrollTo(0, scrollY + y);
+    };
+})();
+```
+
+```rust
+// Em Rust, dentro de inject_dom(), adicionar:
+let scroll_polyfill = r#"
+(function() {
+    if (typeof window === 'undefined') { globalThis.window = {}; }
+    var scrollY = 0;
+    window.scrollY = 0;
+    window.pageYOffset = 0;
+    window.scrollTo = function(xOrOpts, y) {
+        if (typeof xOrOpts === 'object') {
+            y = xOrOpts.top || 0;
+        } else if (y === undefined) {
+            y = xOrOpts || 0;
+        }
+        scrollY = Math.max(0, y);
+        window.scrollY = scrollY;
+        window.pageYOffset = scrollY;
+        var event = new Event('scroll');
+        window.dispatchEvent(event);
+    };
+    window.scrollBy = function(xOrOpts, y) {
+        if (typeof xOrOpts === 'object') {
+            y = xOrOpts.top || 0;
+        } else if (y === undefined) {
+            y = xOrOpts || 0;
+        }
+        window.scrollTo(0, scrollY + y);
+    };
+})();
+"#;
+ctx.eval::<(), _>(scroll_polyfill)?;
+```
+
+E para scrollIntoView nos elementos:
+```javascript
+// No elementProto (criado no T039/T040):
+elementProto.scrollIntoView = function(opts) {
+    // Simular scroll até a posição do elemento
+    // Como não temos posição real, apenas marcar que foi scrollado
+    window.lastScrolledElement = this;
+};
+```
+
+**Testes (tests/m5_test.rs):**
+```rust
+#[tokio::test]
+async fn test_scroll_to() {
+    let port = start_basic_server(); // Servidor que retorna HTML simples
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "--js", "window.scrollTo(0, 500); window.pageYOffset",
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok());
+    // O resultado deve conter "500" (posição Y após scroll)
+}
+
+#[tokio::test]
+async fn test_scroll_by() {
+    let port = start_basic_server();
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "--js", "window.scrollBy(0, 200); window.scrollY",
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok());
+}
+```
+
+**Critério de aceite:**
+```bash
+echo 'window.scrollTo(0, document.body.scrollHeight); window.pageYOffset' \
+  | faf --stdin --url <url>
+# → 500 (ou altura do documento)
+
+cargo test tests::m5_test  # 2+ testes passando
+cargo clippy  # 0 warnings
+```
 
 ---
 
-### T044 — Testes M5: integração em site real (🟡 médio)
-**Arquivos:** `tests/m5_test.rs`
+### T044 — Testes M5: integração completa (🟡 médio)
+**Arquivo principal:** `tests/m5_test.rs` (CRIAR se não existir, ou ADICIONAR aos existentes)
 
-**O que fazer:** Testes de integração reais para todas as tasks M5, usando servidor local + site externo para verificar comportamento.
+**⚠️ ATENÇÃO:** Verificar se `tests/m5_test.rs` já existe (pode ter sido criado pelo M4). Se existir, ADICIONAR ao arquivo existente. Se não, CRIAR.
 
-**Testes:**
-1. **click_dispatched** — Servidor HTML com botão que muda texto ao clicar → FAF click no botão → texto mudou
-2. **click_on_link** — Servidor com link → FAF click → link clicado (verificar por classe adicionada via JS)
-3. **fill_form** — Servidor com formulário (input text, select, checkbox) → FAF preenche e verifica valores
-4. **screenshot_generated** — Servidor com HTML simples → FAF screenshot → PNG existe e tem conteúdo
-5. **screenshot_dimensions** — Screenshot com --width 800 → imagem com largura correta
-6. **watch_detect_change** — Servidor que alterna conteúdo → FAF watch detecta mudança
-7. **watch_max_checks** — Watch com --max-checks 3 → executa 3x e termina
-8. **scroll_into_view** — Servidor com conteúdo longo → FAF scrollIntoView → posição mudou
-9. **js_navigation** — Click em link que muda URL hash → window.location.hash mudou
+**Se for criar (modelo — copiar de tests/m4_test.rs):**
+```rust
+// tests/m5_test.rs
+use faf_browser::api::commands::{Cli, run};
+use clap::Parser;
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::thread;
 
-**Critério:**
-- 9+ testes passando
-- `cargo test`, `cargo clippy`
+// ... funções auxiliares de servidor ...
+
+// Servidor base para testes
+fn start_basic_server() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let body = "<html><body><h1>Teste</h1></body></html>";
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(), body
+        );
+        let _ = stream.write_all(response.as_bytes());
+    });
+    port
+}
+```
+
+**Testes a implementar (total: 9):**
+
+| # | Teste | Task | O que verifica |
+|---|---|---|---|
+| 1 | `test_click_changes_text` | T039 | Botão com onclick → FAF click → texto mudou |
+| 2 | `test_click_nonexistent` | T039 | Click em elemento que não existe → erro |
+| 3 | `test_fill_input` | T040 | Preencher input de texto → .value reflete |
+| 4 | `test_select_option` | T040 | Selecionar option → .value mudou |
+| 5 | `test_checkbox` | T040 | Marcar checkbox → .checked = true |
+| 6 | `test_screenshot_generated` | T041 | Screenshot → PNG existe com ≥ 500 bytes |
+| 7 | `test_watch_detect_change` | T042 | Watch detecta mudança entre requests |
+| 8 | `test_watch_max_checks` | T042 | Watch com --max-checks N → executa N× |
+| 9 | `test_scroll_to` | T043 | window.scrollTo → pageYOffset mudou |
+
+**Padrão de cada teste (template):**
+```rust
+#[tokio::test]
+async fn test_NOME_DO_TESTE() {
+    // 1. Iniciar servidor local
+    let port = start_SERVERTYPE_server();
+    
+    // 2. Configurar CLI
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        // flags específicas do teste
+    ]);
+    
+    // 3. Executar
+    let result = run(cli).await;
+    
+    // 4. Assert
+    assert!(result.is_ok(), "...");
+}
+```
+
+**⚠️ Cuidados nos testes:**
+1. **Timeout:** Testes com watch precisam de timeout pequeno (--interval 1 --max-checks 2). O runtime tokio do teste lida com isso.
+2. **Porta:** Cada servidor usa `127.0.0.1:0` (porta aleatória) para não conflitar.
+3. **Thread:** Servidores rodam em `thread::spawn`. O listener precisa aceitar N conexões (o número de requests que o teste fará). Usar `for _ in 0..N` no loop do servidor.
+4. **Import do `run`:** `use faf_browser::api::commands::run;` — esta função é `pub async fn run(cli: Cli) -> anyhow::Result<()>`.
+5. **Import do `Cli`:** `use faf_browser::api::commands::Cli;` — o struct com `Parser` derive.
+
+**Critério de aceite:**
+```bash
+cargo test tests::m5_test  # 9 testes passando
+cargo clippy  # 0 warnings
+```
 
 ---
 

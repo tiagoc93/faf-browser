@@ -450,10 +450,23 @@ faf-browser/
 - [x] 💾 **Cache** — `--cache .faf-cache` com SHA256 + TTL configurável
 - [x] 🧪 246 testes, 0 falhas
 
-### 🔮 M5+ (Futuro)
-- [ ] Click e preenchimento de formulários
-- [ ] Screenshot (renderização via tiny-skia)
-- [ ] Suporte a Windows/macOS
+### 📋 M5 — Interação com Páginas (Planejado)
+
+O FAF vai deixar de ser só um "leitor" e virar um navegador que interage:
+
+| Task | Feature | Exemplo |
+|---|---|---|
+| **T039** 🔴 | **Click** — `dispatchEvent` via JS | `faf click ".btn" --url <url>` |
+| **T040** 🟡 | **Formulários** — fill + select + submit | `faf repl ...` → `.value = "x"` → `.submit()` |
+| **T041** 🔴 | **Screenshot** — render PNG via tiny-skia | `faf screenshot <url> --output pagina.png` |
+| **T042** 🟡 | **Watch** — monitorar mudanças | `faf watch ".price" --url <url> --interval 30` |
+| **T043** 🟢 | **Scroll** — scrollTo/scrollBy/scrollIntoView | `window.scrollTo(0, 1000)` via REPL |
+| **T044** 🟡 | **Testes M5** — 9 testes de integração | — |
+
+```
+📦 55 tasks · ✅ 39 concluídas · 📋 6 planejadas (M5)
+🧪 246 testes · 0 falhas · clippy limpo
+```
 
 ---
 
