@@ -35,6 +35,14 @@ pub struct Cli {
     #[arg(short = 'j', long = "json", global = true)]
     pub json: bool,
 
+    /// Extrair campos específicos (tag,id,classes,text,html,href,src,alt,color,bg,font-size,font-family,display)
+    #[arg(long = "get", global = true, value_delimiter = ',')]
+    pub get: Option<Vec<String>>,
+
+    /// Formato de saída: text, json, jsonl, csv
+    #[arg(long = "format", global = true, default_value = "text")]
+    pub format: String,
+
     /// Comando: links, images, metadata, query
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -85,11 +93,20 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
     // Parsear HTML
     let doc = crate::dom::HtmlDocument::parse(&html);
 
+    // Determinar formato efetivo: --format vence sobre --json
+    let format = if cli.format != "text" {
+        cli.format.clone()
+    } else if cli.json {
+        "json".to_string()
+    } else {
+        "text".to_string()
+    };
+
     // Executar comando específico ou extração completa
     match &cli.command {
         Some(Command::Links) => {
             let links = doc.links();
-            if cli.json {
+            if format == "json" {
                 println!("{}", serde_json::to_string_pretty(&links)?);
             } else {
                 println!("🔗 Links encontrados: {}", links.len());
@@ -101,7 +118,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         }
         Some(Command::Images) => {
             let images = doc.images();
-            if cli.json {
+            if format == "json" {
                 println!("{}", serde_json::to_string_pretty(&images)?);
             } else {
                 println!("🖼️ Imagens encontradas: {}", images.len());
@@ -113,7 +130,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         }
         Some(Command::Metadata) => {
             let meta = doc.metadata();
-            if cli.json {
+            if format == "json" {
                 println!("{}", serde_json::to_string_pretty(&meta)?);
             } else {
                 println!("📋 Metadados:");
@@ -130,49 +147,74 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 let stylesheet = crate::css::parser::parse_css(&css_text)?;
                 let styles = crate::css::style::compute_styles(&doc, &stylesheet);
 
-                if cli.json {
-                    let output =
-                        crate::api::output::styled_query_to_output(selector, results, &styles);
-                    println!("{}", serde_json::to_string_pretty(&output)?);
-                } else {
-                    println!("🔍 Query '{}': {} resultado(s)", selector, results.len());
-                    for (i, r) in results.iter().enumerate() {
-                        println!(
-                            "  [{}.] <{}> texto: {}",
-                            i + 1,
-                            r.tag,
-                            truncate(&r.text, 80)
-                        );
-                        let style = styles
-                            .iter()
-                            .find(|(em, _)| {
-                                em.tag == r.tag
-                                    && em.id == r.id
-                                    && em.classes == r.classes
-                                    && em.text == r.text
-                            })
-                            .map(|(_, s)| s);
-                        if let Some(s) = style {
-                            println!(
-                                "      🎨 color: {} | bg: {} | font-size: {} | font-family: {} | display: {}",
-                                s.color, s.background_color, s.font_size, s.font_family, s.display
+                match format.as_str() {
+                    "json" => {
+                        if cli.get.is_some() {
+                            let filtered = crate::api::output::styled_results_to_filtered_json(
+                                results, &styles, &cli.get,
                             );
+                            println!("{}", serde_json::to_string_pretty(&filtered)?);
+                        } else {
+                            let output = crate::api::output::styled_query_to_output(
+                                selector, results, &styles,
+                            );
+                            println!("{}", serde_json::to_string_pretty(&output)?);
+                        }
+                    }
+                    "jsonl" => {
+                        let items = crate::api::output::to_styled_items(results, &styles);
+                        println!("{}", crate::api::output::to_jsonl(&items, &cli.get));
+                    }
+                    "csv" => {
+                        let fields = cli.get.as_ref().ok_or_else(|| {
+                            anyhow::anyhow!("--format csv requer --get com lista de campos")
+                        })?;
+                        let items = crate::api::output::to_styled_items(results, &styles);
+                        println!("{}", crate::api::output::to_csv(&items, fields));
+                    }
+                    _ => {
+                        println!("🔍 Query '{}': {} resultado(s)", selector, results.len());
+                        for (i, r) in results.iter().enumerate() {
+                            println!(
+                                "  [{}.] <{}> texto: {}",
+                                i + 1,
+                                r.tag,
+                                truncate(&r.text, 80)
+                            );
+                            let style = styles
+                                .iter()
+                                .find(|(em, _)| {
+                                    em.tag == r.tag
+                                        && em.id == r.id
+                                        && em.classes == r.classes
+                                        && em.text == r.text
+                                })
+                                .map(|(_, s)| s);
+                            if let Some(s) = style {
+                                println!(
+                                    "      🎨 color: {} | bg: {} | font-size: {} | font-family: {} | display: {}",
+                                    s.color, s.background_color, s.font_size, s.font_family, s.display
+                                );
+                            }
                         }
                     }
                 }
             } else {
-                if cli.json {
-                    let output = crate::api::output::query_to_output(selector, results);
-                    println!("{}", serde_json::to_string_pretty(&output)?);
-                } else {
-                    println!("🔍 Query '{}': {} resultado(s)", selector, results.len());
-                    for (i, r) in results.iter().enumerate() {
-                        println!(
-                            "  [{}.] <{}> texto: {}",
-                            i + 1,
-                            r.tag,
-                            truncate(&r.text, 80)
-                        );
+                match format.as_str() {
+                    "json" => {
+                        let output = crate::api::output::query_to_output(selector, results);
+                        println!("{}", serde_json::to_string_pretty(&output)?);
+                    }
+                    _ => {
+                        println!("🔍 Query '{}': {} resultado(s)", selector, results.len());
+                        for (i, r) in results.iter().enumerate() {
+                            println!(
+                                "  [{}.] <{}> texto: {}",
+                                i + 1,
+                                r.tag,
+                                truncate(&r.text, 80)
+                            );
+                        }
                     }
                 }
             }
@@ -180,7 +222,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         None => {
             // Extração completa da página
             let output = crate::api::output::extract_page(&url, &doc);
-            if cli.json {
+            if format == "json" {
                 println!("{}", serde_json::to_string_pretty(&output)?);
             } else {
                 println!("📄 Página: {}", url);
