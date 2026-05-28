@@ -1,6 +1,6 @@
 # ✅ Tasks — FAF BROWSER (Fast As Fuck)
 
-**Total:** 52 tasks | **Concluídas:** 34 | **Estimativa restante:** ~4 meses  
+**Total:** 52 tasks | **Concluídas:** 36 | **Estimativa restante:** ~4 meses  
 **Modelo de delegação:** Kimi K2.6 via `delegate_task()`  
 **Stack:** Rust + Cargo (Edition 2024), rquickjs, tokio, reqwest
 
@@ -100,7 +100,7 @@ O `reqwest::Client` já tem `cookie_store(true)` habilitado, mas é volátil (me
 
 ---
 
-### T032 — WaitForSelector (🟡 médio)
+### T032 — WaitForSelector (🟡 médio) ✅
 **Arquivos:** `src/api/commands.rs` (subcomando `Wait`), `src/js/engine.rs` (helper)
 
 **O que faz:** Aguarda até que um elemento CSS apareça no DOM (útil para páginas com carregamento dinâmico via JS).
@@ -249,7 +249,7 @@ echo "document.title" | faf --url https://books.toscrape.com/ --stdin
 
 ---
 
-### T037 — Cache de Responses (🟡 médio)
+### T037 — Cache de Responses (🟡 médio) ✅
 **Arquivos:** `src/http/cache.rs` (novo), `src/http/mod.rs`, `src/http/client.rs`, `src/utils/config.rs`, `src/api/commands.rs`
 
 **O que faz:** Cacheia respostas HTTP em disco para evitar re-baixar a mesma URL durante desenvolvimento.
@@ -320,9 +320,9 @@ echo "document.title" | faf --url https://books.toscrape.com/ --stdin
 | M2 — CSS Engine | 8 | ✅ Concluído |
 | M2.5 — Polimento CLI | 8 | ✅ Concluído |
 | M3 — JavaScript Engine | 10 | ✅ Concluído |
-| **M4 — Sessão, Interação & Pipeline** | **8** | **🔄 4/8 concluídas** |
+| **M4 — Sessão, Interação & Pipeline** | **8** | **🔄 6/8 concluídas** |
 | M5 — Extração Avançada | 6 | 📋 Planejado |
-| **Total** | **52** | **34 concluídas · 10 planejadas** |
+| **Total** | **52** | **36 concluídas · 9 planejadas** |
 
 ## ✅ Critério de conclusão do MVP
 

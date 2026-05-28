@@ -136,6 +136,20 @@ pub struct FollowArgs {
     pub random_delay: Option<Vec<u64>>,
 }
 
+#[derive(clap::Args, Debug)]
+pub struct WaitArgs {
+    /// Seletor CSS para aguardar
+    pub selector: String,
+
+    /// Timeout em segundos (default: 10)
+    #[arg(long = "timeout", default_value = "10")]
+    pub timeout: u64,
+
+    /// Intervalo de polling em milissegundos (default: 200)
+    #[arg(long = "interval", default_value = "200")]
+    pub interval: u64,
+}
+
 #[derive(clap::Subcommand, Debug)]
 pub enum Command {
     /// Extrair todos os links da página
@@ -151,6 +165,8 @@ pub enum Command {
     },
     /// Seguir links encontrados por um seletor, visitando cada página
     Follow(FollowArgs),
+    /// Aguardar elemento CSS aparecer no DOM
+    Wait(WaitArgs),
 }
 
 /// Executa o comando CLI
@@ -551,6 +567,55 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                     }
                 }
             }
+        }
+        Some(Command::Wait(args)) => {
+            let mut rt = crate::js::JsRuntime::with_client(client.clone())?;
+            rt.set_dom(&doc)?;
+            rt.init_timers()?;
+            rt.init_fetch()?;
+
+            if !cli.no_scripts {
+                let base_url = url::Url::parse(&url)?;
+                rt.execute_page_scripts(&doc, &base_url, &client).await?;
+            }
+
+            let max_iterations = args.timeout * 1000 / args.interval;
+            for i in 0..=max_iterations {
+                match rt.eval_json(&format!("document.querySelector('{}')", args.selector)) {
+                    Ok(result) => {
+                        if !result.is_null() {
+                            if format == "json" {
+                                println!("{}", serde_json::to_string_pretty(&result)?);
+                            } else {
+                                let tag = result.get("tag").and_then(|v| v.as_str()).unwrap_or("?");
+                                let id = result.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                                let text = result.get("text").and_then(|v| v.as_str()).unwrap_or("");
+                                println!(
+                                    "✅ Elemento encontrado: <{}> id=\"{}\" texto: {}",
+                                    tag,
+                                    id,
+                                    text
+                                );
+                            }
+                            return Ok(());
+                        }
+                    }
+                    Err(e) => {
+                        // Seletor inválido ou erro JS: falhar imediatamente (retry não ajuda)
+                        anyhow::bail!("Erro ao avaliar seletor '{}': {}", args.selector, e);
+                    }
+                }
+
+                if i < max_iterations {
+                    tokio::time::sleep(std::time::Duration::from_millis(args.interval)).await;
+                }
+            }
+
+            anyhow::bail!(
+                "Elemento '{}' não encontrado após {}s",
+                args.selector,
+                args.timeout
+            );
         }
         None => {
             // Extração completa da página
