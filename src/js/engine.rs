@@ -105,20 +105,36 @@ impl JsRuntime {
 
     pub fn eval(&self, code: &str) -> Result<String> {
         self.context.with(|ctx| {
-            let value: rquickjs::Coerced<String> = ctx.eval(code).context("JS eval failed")?;
-            Ok(value.0)
+            let result: rquickjs::Result<rquickjs::Coerced<String>> = ctx.eval(code);
+            match result {
+                Ok(v) => Ok(v.0),
+                Err(e) => {
+                    let err_msg = format_js_error(&ctx, e);
+                    Err(anyhow::anyhow!("{}", err_msg))
+                }
+            }
         })
     }
 
     pub fn eval_json(&self, code: &str) -> Result<serde_json::Value> {
         self.context.with(|ctx| {
-            let value: rquickjs::Value = ctx.eval(code).context("JS eval failed")?;
+            let value: rquickjs::Value = match ctx.eval(code) {
+                Ok(v) => v,
+                Err(e) => {
+                    let err_msg = format_js_error(&ctx, e);
+                    return Err(anyhow::anyhow!("{}", err_msg));
+                }
+            };
             ctx.globals()
                 .set("__faf_eval_tmp", value)
                 .context("failed to set temp global")?;
-            let json_str: String = ctx
-                .eval("JSON.stringify(__faf_eval_tmp)")
-                .context("JSON.stringify failed")?;
+            let json_str: String = match ctx.eval("JSON.stringify(__faf_eval_tmp)") {
+                Ok(v) => v,
+                Err(e) => {
+                    let err_msg = format_js_error(&ctx, e);
+                    return Err(anyhow::anyhow!("{}", err_msg));
+                }
+            };
             let json: serde_json::Value =
                 serde_json::from_str(&json_str).context("failed to parse JSON string")?;
             Ok(json)
@@ -134,6 +150,50 @@ impl JsRuntime {
             super::dom_bridge::inject_dom(&ctx, doc).context("failed to inject DOM bridge")?;
             Ok(())
         })
+    }
+}
+
+fn format_js_error<'js>(ctx: &rquickjs::Ctx<'js>, err: rquickjs::Error) -> String {
+    use rquickjs::{Coerced, Exception};
+    use rquickjs::atom::PredefinedAtom;
+
+    match err {
+        rquickjs::Error::Exception => {
+            let value = ctx.catch();
+            if let Some(obj) = value.as_object() {
+                if let Some(ex) = Exception::from_object(obj.clone()) {
+                    let name = obj
+                        .get::<_, Option<Coerced<String>>>(PredefinedAtom::Name)
+                        .ok()
+                        .flatten()
+                        .map(|c| c.0)
+                        .unwrap_or_else(|| "Error".to_string());
+                    let message = ex.message().unwrap_or_default();
+                    let stack = ex.stack().unwrap_or_default();
+
+                    if stack.is_empty() {
+                        format!("{}: {}", name, message)
+                    } else {
+                        format!("{}: {}\n{}", name, message, stack)
+                    }
+                } else {
+                    let msg = value
+                        .as_string()
+                        .and_then(|s| s.to_string().ok())
+                        .unwrap_or_else(|| format!("{:?}", value));
+                    format!("Exception: {}", msg)
+                }
+            } else {
+                let msg = value
+                    .as_string()
+                    .and_then(|s| s.to_string().ok())
+                    .or_else(|| value.as_int().map(|i| i.to_string()))
+                    .or_else(|| value.as_float().map(|f| f.to_string()))
+                    .unwrap_or_else(|| format!("{:?}", value));
+                format!("Exception: {}", msg)
+            }
+        }
+        other => format!("JS error: {}", other),
     }
 }
 
@@ -245,5 +305,54 @@ mod tests {
     fn test_console_error() {
         let rt = JsRuntime::new().unwrap();
         rt.eval("console.error('error', {a: 1})").unwrap();
+    }
+
+    #[test]
+    fn test_eval_error_type_error() {
+        let rt = JsRuntime::new().unwrap();
+        let result = rt.eval("undefined.x");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("TypeError") || err.contains("Error"),
+            "expected TypeError or Error in: {}",
+            err
+        );
+        assert!(
+            err.contains("undefined") || err.contains("read"),
+            "expected 'undefined' or 'read' in: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_eval_error_syntax_error() {
+        let rt = JsRuntime::new().unwrap();
+        let result = rt.eval("{");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("SyntaxError") || err.contains("expected"),
+            "expected SyntaxError or 'expected' in: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_eval_json_error() {
+        let rt = JsRuntime::new().unwrap();
+        let result = rt.eval_json("undefined.x");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("TypeError") || err.contains("Error"),
+            "expected TypeError or Error in: {}",
+            err
+        );
+        assert!(
+            err.contains("undefined") || err.contains("read"),
+            "expected 'undefined' or 'read' in: {}",
+            err
+        );
     }
 }
