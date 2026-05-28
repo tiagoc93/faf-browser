@@ -1,6 +1,6 @@
 # ✅ Tasks — FAF BROWSER (Fast As Fuck)
 
-**Total:** 52 tasks | **Concluídas:** 30 | **Estimativa restante:** ~4 meses  
+**Total:** 52 tasks | **Concluídas:** 33 | **Estimativa restante:** ~4 meses  
 **Modelo de delegação:** Kimi K2.6 via `delegate_task()`  
 **Stack:** Rust + Cargo (Edition 2024), rquickjs, tokio, reqwest
 
@@ -170,7 +170,7 @@ echo "document.title" | faf --url https://books.toscrape.com/ --stdin
 
 ---
 
-### T034 — Rate Limiting no Follow (🟢 pequeno)
+### T034 — Rate Limiting no Follow (🟢 pequeno) ✅
 **Arquivos:** `src/api/commands.rs` (FollowArgs)
 
 **O que faz:** Adiciona delay entre requests no `follow` para não sobrecarregar sites.
@@ -192,7 +192,7 @@ echo "document.title" | faf --url https://books.toscrape.com/ --stdin
 
 ---
 
-### T035 — Retry com Exponential Backoff (🟢 pequeno)
+### T035 — Retry com Exponential Backoff (🟢 pequeno) ✅
 **Arquivos:** `src/http/client.rs`, `src/utils/config.rs`, `src/api/commands.rs`
 
 **O que faz:** Tenta novamente requests que falharam, com delay exponencial.
@@ -224,7 +224,7 @@ echo "document.title" | faf --url https://books.toscrape.com/ --stdin
 
 ---
 
-### T036 — Output com Headers HTTP (🟢 pequeno)
+### T036 — Output com Headers HTTP (🟢 pequeno) ✅
 **Arquivos:** `src/http/client.rs`, `src/api/output.rs`, `src/api/commands.rs`
 
 **O que faz:** Mostra headers HTTP e status code da resposta no output.
@@ -320,9 +320,9 @@ echo "document.title" | faf --url https://books.toscrape.com/ --stdin
 | M2 — CSS Engine | 8 | ✅ Concluído |
 | M2.5 — Polimento CLI | 8 | ✅ Concluído |
 | M3 — JavaScript Engine | 10 | ✅ Concluído |
-| **M4 — Sessão, Interação & Pipeline** | **8** | **📋 Planejado** |
+| **M4 — Sessão, Interação & Pipeline** | **8** | **🔄 3/8 concluídas** |
 | M5 — Extração Avançada | 6 | 📋 Planejado |
-| **Total** | **52** | **30 concluídas · 14 planejadas** |
+| **Total** | **52** | **33 concluídas · 11 planejadas** |
 
 ## ✅ Critério de conclusão do MVP
 

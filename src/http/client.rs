@@ -1,6 +1,8 @@
+use crate::http::cookies;
 use crate::utils::config::Config;
 use reqwest::Client;
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 /// Resposta de uma requisição HTTP
 #[derive(Debug, Clone)]
@@ -16,6 +18,7 @@ pub struct FetchResponse {
 pub struct HttpClient {
     client: Client,
     config: Config,
+    cookie_jar: Option<Arc<Mutex<Vec<cookies::NetscapeCookie>>>>,
 }
 
 impl HttpClient {
@@ -36,11 +39,29 @@ impl HttpClient {
             builder = builder.proxy(proxy);
         }
 
-        // Habilitar cookies
-        builder = builder.cookie_store(true);
-
+        // Não usamos cookie_store(true) — gerenciamos cookies manualmente
+        // para permitir persistência em formato Netscape.
         let client = builder.build()?;
-        Ok(Self { client, config })
+
+        let cookie_jar = if config.cookies_path.is_some() || config.cookies_jar_path.is_some() {
+            let jar = if let Some(ref path) = config.cookies_path {
+                cookies::load_netscape_cookies(path).unwrap_or_else(|e| {
+                    log::warn!("Falha ao carregar cookies de {}: {}", path, e);
+                    Vec::new()
+                })
+            } else {
+                Vec::new()
+            };
+            Some(Arc::new(Mutex::new(jar)))
+        } else {
+            None
+        };
+
+        Ok(Self {
+            client,
+            config,
+            cookie_jar,
+        })
     }
 
     /// Executa uma requisição GET com retry e exponential backoff
@@ -65,11 +86,21 @@ impl HttpClient {
     ) -> anyhow::Result<FetchResponse> {
         let max_retries = self.config.retries;
         let mut delay_ms = self.config.retry_delay_ms;
+        let parsed_url = url::Url::parse(url)?;
 
         for attempt in 0..=max_retries {
             let mut req = self.client.get(url);
             for (key, value) in &headers {
                 req = req.header(*key, *value);
+            }
+
+            // Injeta header Cookie se houver jar de cookies
+            if let Some(ref jar) = self.cookie_jar {
+                let jar_guard = jar.lock().unwrap();
+                let cookie_header = cookies::build_cookie_header(&jar_guard, &parsed_url);
+                if !cookie_header.is_empty() {
+                    req = req.header("Cookie", cookie_header);
+                }
             }
 
             match req.send().await {
@@ -117,6 +148,42 @@ impl HttpClient {
                         })
                         .collect();
                     let body = response.text().await?;
+
+                    // Persiste cookies de Set-Cookie se --cookies-jar foi passado
+                    if let Some(ref jar) = self.cookie_jar
+                        && self.config.cookies_jar_path.is_some() {
+                            let mut jar_guard = jar.lock().unwrap();
+                            let default_domain = parsed_url.host_str().unwrap_or("");
+                            let default_path = parsed_url.path();
+                            let default_path = if let Some(pos) = default_path.rfind('/') {
+                                &default_path[..pos + 1]
+                            } else {
+                                "/"
+                            };
+
+                            for (key, value) in &headers_map {
+                                if key.eq_ignore_ascii_case("set-cookie")
+                                    && let Some(cookie) = cookies::parse_set_cookie(
+                                        value,
+                                        default_domain,
+                                        default_path,
+                                    ) {
+                                        cookies::merge_cookie(&mut jar_guard, cookie);
+                                    }
+                            }
+
+                            if let Some(ref jar_path) = self.config.cookies_jar_path
+                                && let Err(e) =
+                                    cookies::save_netscape_cookies(&jar_guard, jar_path)
+                                {
+                                    log::warn!(
+                                        "Falha ao salvar cookies em {}: {}",
+                                        jar_path,
+                                        e
+                                    );
+                                }
+                        }
+
                     return Ok(FetchResponse {
                         status: status_u16,
                         status_text,

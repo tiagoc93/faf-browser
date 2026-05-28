@@ -81,6 +81,14 @@ pub struct Cli {
     #[arg(long = "show-headers", global = true)]
     pub show_headers: bool,
 
+    /// Carregar cookies de arquivo no formato Netscape
+    #[arg(long = "cookies", global = true)]
+    pub cookies: Option<String>,
+
+    /// Salvar cookies em arquivo no formato Netscape após a requisição
+    #[arg(long = "cookies-jar", global = true)]
+    pub cookies_jar: Option<String>,
+
     /// Comando: links, images, metadata, query
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -157,6 +165,8 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         proxy: cli.proxy.clone(),
         retries: cli.retries,
         retry_delay_ms: cli.retry_delay,
+        cookies_path: cli.cookies.clone(),
+        cookies_jar_path: cli.cookies_jar.clone(),
     };
 
     let client = crate::http::client::HttpClient::new(config)?;

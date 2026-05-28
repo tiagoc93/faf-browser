@@ -6,6 +6,8 @@ pub struct Config {
     pub proxy: Option<String>,
     pub retries: u64,
     pub retry_delay_ms: u64,
+    pub cookies_path: Option<String>,
+    pub cookies_jar_path: Option<String>,
 }
 
 impl Default for Config {
@@ -21,6 +23,8 @@ impl Default for Config {
             proxy: None,
             retries: 0,
             retry_delay_ms: 1000,
+            cookies_path: None,
+            cookies_jar_path: None,
         }
     }
 }
