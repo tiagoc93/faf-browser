@@ -5,21 +5,28 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
-static TIMER_RT: LazyLock<tokio::runtime::Runtime> =
+pub(crate) static TIMER_RT: LazyLock<tokio::runtime::Runtime> =
     LazyLock::new(|| tokio::runtime::Runtime::new().expect("failed to create timer runtime"));
 
 pub struct JsRuntime {
     #[allow(dead_code)]
     runtime: Runtime,
     context: Context,
+    client: Option<crate::http::client::HttpClient>,
 }
 
 impl JsRuntime {
     pub fn new() -> Result<Self> {
         let runtime = Runtime::new()?;
         let context = Context::full(&runtime).context("failed to create full rquickjs context")?;
-        let mut this = Self { runtime, context };
+        let mut this = Self { runtime, context, client: None };
         this.init_console()?;
+        Ok(this)
+    }
+
+    pub fn with_client(client: crate::http::client::HttpClient) -> Result<Self> {
+        let mut this = Self::new()?;
+        this.client = Some(client);
         Ok(this)
     }
 
@@ -359,6 +366,13 @@ impl JsRuntime {
             Ok(())
         })
     }
+
+    pub fn init_fetch(&mut self) -> Result<()> {
+        let client = self.client.as_ref().context(
+            "HttpClient not set. Use with_client() or set the client before calling init_fetch()",
+        )?;
+        super::fetch_bridge::init_fetch(&self.context, client)
+    }
 }
 
 fn format_js_error<'js>(ctx: &rquickjs::Ctx<'js>, err: rquickjs::Error) -> String {
@@ -606,5 +620,137 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
         let result = rt.eval("globalThis.stringResult").unwrap();
         assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn test_fetch_sync() {
+        let config = crate::utils::config::Config::default();
+        let client = crate::http::client::HttpClient::new(config).unwrap();
+        let mut rt = JsRuntime::with_client(client).unwrap();
+        rt.init_fetch().unwrap();
+        let result = rt.eval("typeof fetch").unwrap();
+        assert_eq!(result, "function");
+    }
+
+    #[test]
+    fn test_fetch_rejects_connection_refused() {
+        let config = crate::utils::config::Config {
+            timeout_secs: 5,
+            ..crate::utils::config::Config::default()
+        };
+        let client = crate::http::client::HttpClient::new(config).unwrap();
+        let mut rt = JsRuntime::with_client(client).unwrap();
+        rt.init_fetch().unwrap();
+
+        let result = rt.eval("fetch('http://127.0.0.1:1/')");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("error") || err.contains("refused") || err.contains("Connection"), "unexpected error: {}", err);
+    }
+
+    #[test]
+    fn test_fetch_local_server() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::thread;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: 13\r\n\r\n{\"hello\":123}";
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+
+        let config = crate::utils::config::Config::default();
+        let client = crate::http::client::HttpClient::new(config).unwrap();
+        let mut rt = JsRuntime::with_client(client).unwrap();
+        rt.init_fetch().unwrap();
+
+        let result = rt.eval(&format!(
+            r#"var r = fetch('http://127.0.0.1:{}/test'); JSON.stringify({{status: r.status, body: r.text()}});"#,
+            port
+        ))
+        .unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["status"], 200);
+        assert_eq!(parsed["body"], r#"{"hello":123}"#);
+    }
+
+    #[test]
+    fn test_fetch_response_json_method() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::thread;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: 13\r\n\r\n{\"hello\":123}";
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+
+        let config = crate::utils::config::Config::default();
+        let client = crate::http::client::HttpClient::new(config).unwrap();
+        let mut rt = JsRuntime::with_client(client).unwrap();
+        rt.init_fetch().unwrap();
+
+        let result = rt.eval(&format!(
+            r#"var r = fetch('http://127.0.0.1:{}/test'); JSON.stringify(r.json());"#,
+            port
+        ))
+        .unwrap();
+        assert_eq!(result, r#"{"hello":123}"#);
+    }
+
+    #[test]
+    fn test_fetch_response_headers() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::thread;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nX-Custom: test-value\r\nConnection: close\r\nContent-Length: 2\r\n\r\nok";
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+
+        let config = crate::utils::config::Config::default();
+        let client = crate::http::client::HttpClient::new(config).unwrap();
+        let mut rt = JsRuntime::with_client(client).unwrap();
+        rt.init_fetch().unwrap();
+
+        let result = rt.eval(&format!(
+            r#"var r = fetch('http://127.0.0.1:{}/test'); JSON.stringify(r.headers);"#,
+            port
+        ))
+        .unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["content-type"], "application/json");
+    }
+
+    #[test]
+    fn test_fetch_post_method() {
+        let config = crate::utils::config::Config::default();
+        let client = crate::http::client::HttpClient::new(config).unwrap();
+        let mut rt = JsRuntime::with_client(client).unwrap();
+        rt.init_fetch().unwrap();
+
+        // Testar que options são aceitos (não vai conectar, mas não deve crashar)
+        let result = rt.eval("typeof fetch('http://127.0.0.1:1/', {method: 'POST', body: 'test'})");
+        // Deve lançar erro de conexão recusada, não erro de sintaxe
+        assert!(result.is_err());
     }
 }
