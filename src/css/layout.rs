@@ -181,6 +181,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn test_css_to_pixels_fallback_bare_float() {
         assert_eq!(css_to_pixels("42", 800.0, 16.0), 42.0);
         assert_eq!(css_to_pixels("3.14", 800.0, 16.0), 3.14);

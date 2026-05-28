@@ -15,6 +15,10 @@ pub struct Cli {
     #[arg(short = 'q', long = "query")]
     pub query: Option<String>,
 
+    /// CSS inline ou caminho para arquivo CSS
+    #[arg(long = "css", visible_alias = "style")]
+    pub css: Option<String>,
+
     /// Proxy (http:// ou socks5://)
     #[arg(short = 'x', long = "proxy")]
     pub proxy: Option<String>,
@@ -124,18 +128,56 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         }
         Some(Command::Query { selector }) => {
             let results = doc.query(selector)?;
-            if cli.json {
-                let output = crate::api::output::query_to_output(selector, results);
-                println!("{}", serde_json::to_string_pretty(&output)?);
+            let css_input = load_css_input(&cli.css)?;
+
+            if let Some(css_text) = css_input {
+                let stylesheet = crate::css::parser::parse_css(&css_text)?;
+                let styles = crate::css::style::compute_styles(&doc, &stylesheet);
+
+                if cli.json {
+                    let output =
+                        crate::api::output::styled_query_to_output(selector, results, &styles);
+                    println!("{}", serde_json::to_string_pretty(&output)?);
+                } else {
+                    println!("🔍 Query '{}': {} resultado(s)", selector, results.len());
+                    for (i, r) in results.iter().enumerate() {
+                        println!(
+                            "  [{}.] <{}> texto: {}",
+                            i + 1,
+                            r.tag,
+                            truncate(&r.text, 80)
+                        );
+                        let style = styles
+                            .iter()
+                            .find(|(em, _)| {
+                                em.tag == r.tag
+                                    && em.id == r.id
+                                    && em.classes == r.classes
+                                    && em.text == r.text
+                            })
+                            .map(|(_, s)| s);
+                        if let Some(s) = style {
+                            println!(
+                                "      🎨 color: {} | bg: {} | font-size: {} | font-family: {} | display: {}",
+                                s.color, s.background_color, s.font_size, s.font_family, s.display
+                            );
+                        }
+                    }
+                }
             } else {
-                println!("🔍 Query '{}': {} resultado(s)", selector, results.len());
-                for (i, r) in results.iter().enumerate() {
-                    println!(
-                        "  [{}.] <{}> texto: {}",
-                        i + 1,
-                        r.tag,
-                        truncate(&r.text, 80)
-                    );
+                if cli.json {
+                    let output = crate::api::output::query_to_output(selector, results);
+                    println!("{}", serde_json::to_string_pretty(&output)?);
+                } else {
+                    println!("🔍 Query '{}': {} resultado(s)", selector, results.len());
+                    for (i, r) in results.iter().enumerate() {
+                        println!(
+                            "  [{}.] <{}> texto: {}",
+                            i + 1,
+                            r.tag,
+                            truncate(&r.text, 80)
+                        );
+                    }
                 }
             }
         }
@@ -160,6 +202,28 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Carrega CSS a partir de string inline ou arquivo.
+/// Se o texto contém '{', trata como CSS inline; caso contrário, tenta ler como arquivo.
+fn load_css_input(css_opt: &Option<String>) -> anyhow::Result<Option<String>> {
+    let css_str = match css_opt {
+        Some(s) => s,
+        None => return Ok(None),
+    };
+
+    if css_str.contains('{') {
+        Ok(Some(css_str.clone()))
+    } else {
+        match std::fs::read_to_string(css_str) {
+            Ok(content) => Ok(Some(content)),
+            Err(e) => Err(anyhow::anyhow!(
+                "Falha ao ler arquivo CSS '{}': {}",
+                css_str,
+                e
+            )),
+        }
+    }
 }
 
 fn truncate(s: &str, max: usize) -> String {

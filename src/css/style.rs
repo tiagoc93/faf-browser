@@ -1,11 +1,12 @@
 use crate::css::parser::{Rule, Stylesheet};
 use crate::css::selector::{ElementMatch, select_elements};
 use crate::dom::HtmlDocument;
+use serde::Serialize;
 use std::collections::HashMap;
 
 type ElementKey = (String, Option<String>, Vec<String>, String);
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize)]
 pub struct ComputedStyle {
     pub color: String,
     pub background_color: String,
