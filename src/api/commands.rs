@@ -1,4 +1,5 @@
 use clap::Parser;
+use rand::Rng;
 use url::Url;
 
 /// FAF BROWSER — Fast As Fuck. Navegador headless 100% Rust.
@@ -97,6 +98,14 @@ pub struct FollowArgs {
     /// Restringir ao mesmo domínio
     #[arg(long = "same-domain", default_value = "true", action = clap::ArgAction::Set)]
     pub same_domain: bool,
+
+    /// Delay fixo entre batches de requisições em milissegundos
+    #[arg(long = "delay", default_value = "0")]
+    pub delay: u64,
+
+    /// Delay aleatório entre batches em milissegundos (min max)
+    #[arg(long = "random-delay", num_args = 2, value_names = ["MIN", "MAX"])]
+    pub random_delay: Option<Vec<u64>>,
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -392,52 +401,74 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 None
             };
 
-            // 5. Visitar páginas concorrentemente
+            // 5. Visitar páginas em batches concorrentes com delay entre batches
             let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(args.concurrency));
-            let mut handles = Vec::with_capacity(hrefs.len());
+            let mut page_results = Vec::with_capacity(hrefs.len());
 
-            for (idx, href) in hrefs.into_iter().enumerate() {
-                let sem = semaphore.clone();
-                let c = client.clone();
-                let extract = args.extract.clone();
-                let css_base = css_input_base.clone();
-                let cli_css = cli.css.clone();
-                let get_fields = cli.get.clone();
-                let no_page_css = cli.no_page_css;
+            for batch in hrefs.chunks(args.concurrency) {
+                let mut handles = Vec::with_capacity(batch.len());
 
-                let handle = tokio::spawn(async move {
-                    let _permit = sem.acquire().await.ok();
-                    let result = follow_page(
-                        c,
-                        &href,
-                        extract.as_deref(),
-                        css_base,
-                        &cli_css,
-                        no_page_css,
-                        &get_fields,
-                    )
-                    .await;
-                    (idx, href, result)
-                });
-                handles.push(handle);
-            }
+                for (idx, href) in batch.iter().cloned().enumerate() {
+                    let sem = semaphore.clone();
+                    let c = client.clone();
+                    let extract = args.extract.clone();
+                    let css_base = css_input_base.clone();
+                    let cli_css = cli.css.clone();
+                    let get_fields = cli.get.clone();
+                    let no_page_css = cli.no_page_css;
+                    let batch_offset = page_results.len();
 
-            // 6. Coletar resultados
-            let mut page_results = Vec::with_capacity(handles.len());
-            for handle in handles {
-                let (idx, href, result) = match handle.await {
-                    Ok((idx, href, Ok(res))) => (idx, href, res),
-                    Ok((_, href, Err(e))) => {
-                        log::warn!("Falha ao visitar {}: {}", href, e);
-                        continue;
+                    let handle = tokio::spawn(async move {
+                        let _permit = sem.acquire().await.ok();
+                        let result = follow_page(
+                            c,
+                            &href,
+                            extract.as_deref(),
+                            css_base,
+                            &cli_css,
+                            no_page_css,
+                            &get_fields,
+                        )
+                        .await;
+                        (batch_offset + idx, href, result)
+                    });
+                    handles.push(handle);
+                }
+
+                // Coletar resultados do batch
+                for handle in handles {
+                    let (idx, href, result) = match handle.await {
+                        Ok((idx, href, Ok(res))) => (idx, href, res),
+                        Ok((_, href, Err(e))) => {
+                            log::warn!("Falha ao visitar {}: {}", href, e);
+                            continue;
+                        }
+                        Err(e) => {
+                            log::warn!("Task panicked: {}", e);
+                            continue;
+                        }
+                    };
+                    page_results.push((idx, href, result));
+                }
+
+                // Aplicar delay entre batches (exceto após o último)
+                let delay_ms = if let Some(ref rd) = args.random_delay {
+                    if rd.len() == 2 {
+                        let min = rd[0];
+                        let max = rd[1];
+                        rand::thread_rng().gen_range(min..=max)
+                    } else {
+                        args.delay
                     }
-                    Err(e) => {
-                        log::warn!("Task panicked: {}", e);
-                        continue;
-                    }
+                } else {
+                    args.delay
                 };
-                page_results.push((idx, href, result));
+
+                if delay_ms > 0 && batch.len() == args.concurrency {
+                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                }
             }
+
             page_results.sort_by_key(|(idx, _, _)| *idx);
 
             // 7. Output
