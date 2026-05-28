@@ -1,16 +1,31 @@
+use crate::css::color::Color;
 use crate::css::layout::{compute_box_model, css_to_pixels};
 use crate::css::selector::ElementMatch;
 use crate::css::style::ComputedStyle;
 use crate::dom::{HtmlDocument, QueryResult};
+use ab_glyph::{Font, FontArc, PxScale, ScaleFont};
 use std::collections::HashSet;
+use std::fs;
 use std::path::Path;
-use tiny_skia::{Paint, Pixmap, Rect, Transform};
+use tiny_skia::{ColorU8, Paint, Pixmap, Rect, Transform};
 
 /// Configuração da renderização
 pub struct ScreenshotConfig {
     pub width: u32,
     pub height: u32,
 }
+
+/// Caminhos de fontes TTF conhecidos no sistema (busca em ordem)
+const FONT_PATHS: &[&str] = &[
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSerif.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
+];
 
 /// Renderiza um HtmlDocument em um PNG, salvando no caminho especificado.
 pub fn render_to_image(
@@ -45,9 +60,19 @@ pub fn render_to_image(
         None,
     );
 
+    // 3.5 Load font padrão (ab_glyph)
+    let default_font = load_font_simple("");
+    if default_font.is_some() {
+        log::info!("Fonte padrão carregada com sucesso");
+    } else {
+        log::warn!("Fonte padrão NÃO carregada - fallback para retângulos");
+    }
+
     // 4. Renderizar elementos visíveis do body (flat list)
     let elements = doc.query("*").unwrap_or_default();
     let mut y = 0.0f32;
+    let mut text_count = 0;
+    let mut font_ok_count = 0;
 
     // Tags estruturais/não-visíveis a pular
     let skip_tags: HashSet<&str> = ["html", "head", "script", "style", "meta", "link", "title"]
@@ -103,21 +128,47 @@ pub fn render_to_image(
             }
         }
 
-        // Desenhar texto (placeholder visual)
+        // Desenhar texto usando ab_glyph
         if !element.text.is_empty() {
+            text_count += 1;
             let fg = if !style.color.is_empty() && style.color != "inherit" {
                 &style.color
             } else {
                 "#000000"
             };
             if let Some(color) = crate::css::color::parse_color(fg) {
-                let mut fg_paint = Paint::default();
-                fg_paint.set_color_rgba8(color.r, color.g, color.b, 255);
-                let text_h = font_size.min(draw_h * 0.6);
-                let text_w = (element.text.len() as f32 * font_size * 0.5).min(draw_w);
-                let text_y = y + (draw_h - text_h) * 0.5;
-                if let Some(rect) = Rect::from_xywh(x + 4.0, text_y, text_w, text_h) {
-                    pixmap.fill_rect(rect, &fg_paint, Transform::identity(), None);
+                // Tentar carregar fonte específica do elemento; fallback para default_font
+                let font = if !style.font_family.is_empty() {
+                    let family = style
+                        .font_family
+                        .split(',')
+                        .next()
+                        .unwrap_or("")
+                        .trim()
+                        .trim_matches('"')
+                        .trim_matches('\'');
+                    load_font_simple(family).or_else(|| default_font.clone())
+                } else {
+                    default_font.clone()
+                };
+
+                if let Some(ref font) = font {
+                    font_ok_count += 1;
+                    log::info!("Renderizando texto [{:?}]: \"{}\" em x={}, y={}, size={}, cor={:?}",
+                        element.tag, &element.text[..element.text.len().min(30)], x, y, font_size, color);
+                    render_text_ab(&mut pixmap, &element.text, x, y, font_size, color, font);
+                } else {
+                    // Fallback: desenhar retângulo placeholder se fonte não encontrada
+                    log::warn!("Fonte não encontrada p/ {:?} (tag={}, texto=\"{}\") - fallback retângulo",
+                        element.tag, element.tag, &element.text[..element.text.len().min(30)]);
+                    let mut fg_paint = Paint::default();
+                    fg_paint.set_color_rgba8(color.r, color.g, color.b, 255);
+                    let text_h = font_size.min(draw_h * 0.6);
+                    let text_w = (element.text.len() as f32 * font_size * 0.5).min(draw_w);
+                    let text_y = y + (draw_h - text_h) * 0.5;
+                    if let Some(rect) = Rect::from_xywh(x + 4.0, text_y, text_w, text_h) {
+                        pixmap.fill_rect(rect, &fg_paint, Transform::identity(), None);
+                    }
                 }
             }
         }
@@ -125,12 +176,146 @@ pub fn render_to_image(
         y += h + box_model.margin_bottom;
     }
 
+    log::info!("Renderização: {} total elementos, {} com texto, {} com fonte OK",
+        elements.len(), text_count, font_ok_count);
+
     // 5. Salvar PNG
     pixmap
         .save_png(Path::new(output_path))
         .map_err(|e| anyhow::anyhow!("Falha ao salvar PNG: {:?}", e))?;
 
     Ok(())
+}
+
+/// Carrega uma fonte TTF do sistema pelo nome (simplificado) ou retorna a fonte padrão.
+fn load_font_simple(family: &str) -> Option<FontArc> {
+    // Map de nomes de família para caminhos de fonte
+    let family_lower = family.to_lowercase();
+
+    // Tenta achar um caminho que contenha o nome da família
+    for &path in FONT_PATHS {
+        // Extrai o nome do arquivo sem extensão
+        if let Some(file_name) = path.rsplit('/').next() {
+            let file_stem = file_name.rsplit('.').last().unwrap_or(file_name);
+            let file_lower = file_stem.to_lowercase();
+            if file_lower.contains(&family_lower.replace(' ', ""))
+                || family_lower.is_empty()
+            {
+                if let Ok(data) = fs::read(path) {
+                    if let Ok(font) = FontArc::try_from_vec(data) {
+                        return Some(font);
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback: tenta todos os paths em ordem
+    for &path in FONT_PATHS {
+        if let Ok(data) = fs::read(path) {
+            if let Ok(font) = FontArc::try_from_vec(data) {
+                return Some(font);
+            }
+        }
+    }
+
+    None
+}
+
+/// Renderiza texto usando ab_glyph.
+fn render_text_ab(
+    pixmap: &mut Pixmap,
+    text: &str,
+    x: f32,
+    y: f32,
+    font_size: f32,
+    color: Color,
+    font: &FontArc,
+) {
+    if text.is_empty() {
+        return;
+    }
+
+    let size = font_size.max(8.0).min(200.0);
+    let px_scale = PxScale::from(size);
+    let px_font = font.as_scaled(px_scale);
+
+    let pm_width = pixmap.width();
+    let pm_height = pixmap.height();
+    let pixels = pixmap.pixels_mut();
+
+    // baseline_y é a linha base onde o texto se alinha
+    let baseline_y = y + size * 0.85;
+    let mut cursor_x = x;
+
+    let mut chars_total = 0u32;
+    let mut pixels_drawn = 0u32;
+
+    for ch in text.chars() {
+        // scaled_glyph já retorna um Glyph com glyph_id setado
+        let mut glyph = px_font.scaled_glyph(ch);
+
+        // Pega o avanço horizontal em pixels
+        let advance = px_font.h_advance(glyph.id);
+
+        // Posiciona o glyph
+        glyph.position = ab_glyph::point(cursor_x, baseline_y);
+
+        // Obtém outline para rasterizar
+        let outline = match px_font.outline_glyph(glyph) {
+            Some(o) => o,
+            None => {
+                // Sem outline (espaço, controle, etc) — avança cursor
+                cursor_x += advance;
+                continue;
+            }
+        };
+
+        chars_total += 1;
+
+        // draw() fornece coordenadas RELATIVAS ao bounding box do glyph
+        let b = outline.px_bounds();
+
+        outline.draw(|rx: u32, ry: u32, cover: f32| {
+            if cover <= 0.0 {
+                return;
+            }
+
+            let px = rx + b.min.x as u32;
+            let py = ry + b.min.y as u32;
+
+            if px >= pm_width || py >= pm_height {
+                return;
+            }
+
+            let idx = (py * pm_width + px) as usize;
+            let bg_premul = pixels[idx];
+            let bg = bg_premul.demultiply();
+
+            let text_alpha = cover * color.a;
+            let inv_alpha = 1.0 - text_alpha;
+
+            let r = (color.r as f32 * text_alpha + bg.red() as f32 * inv_alpha) as u8;
+            let g = (color.g as f32 * text_alpha + bg.green() as f32 * inv_alpha) as u8;
+            let b = (color.b as f32 * text_alpha + bg.blue() as f32 * inv_alpha) as u8;
+            let a = (255.0 * text_alpha + bg.alpha() as f32 * inv_alpha) as u8;
+
+            let blended = ColorU8::from_rgba(r, g, b, a);
+            pixels[idx] = blended.premultiply();
+            pixels_drawn += 1;
+        });
+
+        cursor_x += advance;
+    }
+
+    if chars_total > 0 && pixels_drawn == 0 {
+        log::warn!("render_text_ab: {} chars OK, mas 0 pixels desenhados! y={}, baseline_y={}, size={}",
+            chars_total, y, baseline_y, size);
+    }
+    if pixels_drawn > 0 {
+        log::info!("render_text_ab: {} chars, {} pixels p/ \"{}\"",
+            chars_total, pixels_drawn, &text[..text.len().min(20)]);
+    }
 }
 
 fn find_style_for_element(
@@ -141,8 +326,13 @@ fn find_style_for_element(
         if em.tag == element.tag
             && em.id == element.id
             && em.classes == element.classes
-            && em.text == element.text
         {
+            return style.clone();
+        }
+    }
+    // Fallback: try matching only by tag
+    for (em, style) in computed {
+        if em.tag == element.tag {
             return style.clone();
         }
     }

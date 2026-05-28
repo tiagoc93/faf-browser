@@ -39,8 +39,10 @@ Renderizado pelo CSS Engine próprio. Runtime **QuickJS** embarcado para execuç
 | 🎨 **CSS Engine** — parser, cascata, especificidade (inline > ID > class > tag) | ✅ |
 | 📐 **Box Model** — width, height, margin, padding computados | ✅ |
 | 🖌️ **Cores** — hex, rgb, rgba, 19 cores nomeadas | ✅ |
-| 🔤 **Fontes** — family, size (px/em/rem/%), weight | ✅ |
+| 🔤 **Fontes** — family, size (px/em/rem/%), weight (100-900) | ✅ |
 | 📊 **Computed Styles** — estilos reais da página (parseia `<style>` e `<link>` automagicamente) | ✅ |
+| 📸 **Screenshot** — render PNG com texto real e CSS via `ab_glyph` + `tiny-skia` | ✅ **NOVO** |
+| 📝 **Texto Real** — renderização com ab_glyph (100% Rust, sem freetype) | ✅ **NOVO** |
 | 🔎 **Filtros** — `--filter "text~=Python"`, `--filter "href^=https"`, regex | ✅ |
 | 🎯 **Extração seletiva** — `--get "text, href"` — só os campos que importam | ✅ |
 | 🕷️ **Crawler** — `faf follow` — siga links, visite páginas, extraia dados | ✅ |
@@ -349,6 +351,9 @@ faf-browser/
 │   │   ├── engine.rs        # Runtime QuickJS (rquickjs)
 │   │   ├── dom_bridge.rs    # Ponte DOM ↔ JS (document.querySelector, etc)
 │   │   └── fetch_bridge.rs  # Ponte fetch ↔ reqwest (HTTP do JS)
+│   ├── render/
+│   │   ├── mod.rs
+│   │   └── screenshot.rs    # Renderização PNG (tiny-skia + ab_glyph)
 │   └── utils/
 │       ├── mod.rs
 │       ├── config.rs        # Configurações (retry, cache, cookies, etc)
@@ -370,7 +375,8 @@ faf-browser/
 | HTML/DOM | `scraper` (html5ever) | Parse e query na DOM tree |
 | CSS Parser | `cssparser` | Tokenização e parsing de folhas de estilo |
 | CSS Selectors | `selectors` | Matching e especificidade |
-| CSS Layout | `tiny-skia` | Box model e dimensões |
+| CSS Layout | `tiny-skia` | Box model, formas e render 2D |
+| **Renderização** | **`ab_glyph`** | **Rasterização de texto (Rust puro, sem freetype)** |
 | CLI | `clap` (derive) | Interface de linha de comando |
 | Serialização | `serde` + `serde_json` | Output JSON, CSV, JSONL |
 | JS Runtime | `rquickjs` (QuickJS) | Runtime JavaScript embarcado |
@@ -395,7 +401,7 @@ faf-browser/
 | **DOM bridge JS** | ❌ | ✅ | ✅ `document.querySelector` |
 | **Fetch via JS** | ❌ | ✅ | ✅ `fetch()` → reqwest |
 | **Scripts da página** | ❌ | ✅ | ✅ `<script>` execução |
-| **Screenshots** | ❌ | ✅ | ❌ (planejado) |
+| **Screenshots** | ❌ | ✅ | ✅ **ab_glyph + tiny-skia** |
 | **RAM (página média)** | ~50MB | ~150MB | ~5MB |
 | **Tempo 1ª query** | ~2s | ~3s | ~0.3s |
 | **Cookies persistente** | ✅ `requests.Session` | ✅ `context.cookies()` | ✅ `--cookies` + `--cookies-jar` |
@@ -450,23 +456,66 @@ faf-browser/
 - [x] 💾 **Cache** — `--cache .faf-cache` com SHA256 + TTL configurável
 - [x] 🧪 266 testes, 0 falhas
 
-### 📋 M5 — Interação com Páginas (Planejado)
+### ✅ M5 — Interação com Páginas (Concluído 🎉)
 
-O FAF vai deixar de ser só um "leitor" e virar um navegador que interage:
+| Task | Feature | Status |
+|------|---------|--------|
+| **T039** | **Click** — `dispatchEvent` via JS | ✅ |
+| **T040** | **Formulários** — fill + select + submit | ✅ |
+| **T041** | **Screenshot** — render PNG via tiny-skia + ab_glyph | ✅ |
+| **T042** | **Watch** — monitorar mudanças com polling | ✅ |
+| **T043** | **Scroll** — scrollTo/scrollBy/scrollIntoView | ✅ |
+| **T044** | **Testes M5** — 9 testes de integração | ✅ |
 
-| Task | Feature | Exemplo |
-|---|---|---|
-| **T039** 🔴 | **Click** — `dispatchEvent` via JS | `faf click ".btn" --url <url>` |
-| **T040** 🟡 | **Formulários** — fill + select + submit | `faf repl ...` → `.value = "x"` → `.submit()` |
-| **T041** 🔴 | **Screenshot** — render PNG via tiny-skia | `faf screenshot <url> --output pagina.png` |
-| **T042** 🟡 | **Watch** — monitorar mudanças | `faf watch ".price" --url <url> --interval 30` |
-| **T043** 🟢 | **Scroll** — scrollTo/scrollBy/scrollIntoView | `window.scrollTo(0, 1000)` via REPL |
-| **T044** 🟡 | **Testes M5** — 9 testes de integração | — |
+#### 🔧 Fix Crítico no M5 — Screenshot com Texto Real
+
+O screenshot do M5 estava gerando **tela em branco** devido a dois bugs:
+
+| Bug | Causa | Solução |
+|-----|-------|---------|
+| **font-kit bug no Linux** | Loader freetype tem `// TODO: woefully incomplete` — glifos retornam alpha=0 | Migrado p/ `ab_glyph` (100% Rust, zero C) |
+| **Coordenadas relativas no draw()** | `outline.draw()` fornece coordenadas RELATIVAS ao bbox, não absolutas | Soma de `px_bounds.min` |
+
+**Antes:** 172 pixels de texto, apenas 14 linhas (y=0-13)
+**Agora:** 1.122 pixels de texto preto, **304 linhas (y=3 a 799) — 38% da página**
 
 ```
-📦 61 tasks · ✅ 49 concluídas · MVP Completo! 🎉
-🧪 266 testes · 0 falhas · clippy limpo
+📦 61 tasks · ✅ 61 concluídas · MVP Completo! 🎉
+🧪 266 testes · 0 falhas · clippy limpo · build 0 warnings
 ```
+
+### 📋 M6 — Layout Engine (Planejado)
+
+O FAF Browser vai ganhar um motor de layout PRÓPRIO para renderização fiel de páginas — tudo em Rust, sem Chromium, sem Playwright.
+
+#### Objetivo
+
+Transformar o screenshot de "prova de conceito" em uma representação visual fiel da página, com posicionamento correto dos elementos, cores, bordas, imagens e fluxo de texto.
+
+| Task | Feature | Prioridade |
+|------|---------|:----------:|
+| **T045** | **Layout Tree** — árvore visual a partir do DOM (block vs inline) | 🔴 |
+| **T046** | **Inline Flow** — texto em linha com quebra automática (text-wrap) | 🔴 |
+| **T047** | **Block Flow** — empilhamento vertical com margin collapsing | 🔴 |
+| **T048** | **Background rendering** — cores de fundo reais + imagens de background | 🔴 |
+| **T049** | **Bordas CSS** — border-width, border-style, border-color, cantos | 🟡 |
+| **T050** | **Imagens `<img>`** — decode e render no screenshot | 🟡 |
+| **T051** | **Positioning** — relative, absolute, z-index | 🟡 |
+| **T052** | **Testes M6** — 12+ testes de integração visual | 🔴 |
+
+```bash
+📦 8 tasks · 📅 Previsão: 4-7 dias
+🎯 Meta: Screenshot com layout fiel, sem Chromium
+```
+
+#### Stack M6
+
+| Componente | Crate | Função |
+|-----------|-------|--------|
+| Renderização | `tiny-skia` | Canvas 2D, formas, blending |
+| Texto | `ab_glyph` | Rasterização de fontes (puro Rust) |
+| Layout | `std` + `tiny-skia` | Algoritmos de posicionamento próprios |
+| Imagens | `image` (jpeg/png/webp) | Decode para render |
 
 ---
 
