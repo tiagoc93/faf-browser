@@ -8,7 +8,7 @@
 | 2 | T022 (DOM bridge) | ✅ Concluído | 22ed5a9 |
 | 3 | T023 + T025 + T026 + T027 (timers, timeout, console, erros) | ✅ Concluído | 2ebe948 |
 | 4 | T024 (fetch bridge) | ✅ Concluído | — |
-| 5 | T028 + T029 + T030 (scripts, CLI, testes) | ⏳ Pendente | — |
+| 5 | T028 + T029 + T030 (scripts, CLI, testes) | ✅ Concluído | — |
 
 ## Tasks
 
@@ -21,6 +21,6 @@
 | T025 | Timeout de execução JS (5s default) | ✅ Feito |
 | T026 | Console.log → Rust logger | ✅ Feito |
 | T027 | Error handling com stack traces | ✅ Feito |
-| T028 | Suporte a `<script>` tags inline + externas | ⏳ Pendente |
-| T029 | CLI --js e --js-file | ⏳ Pendente |
-| T030 | Testes M3 (integração) | ⏳ Pendente |
+| T028 | Suporte a `<script>` tags inline + externas | ✅ Feito |
+| T029 | CLI --js e --js-file | ✅ Feito |
+| T030 | Testes M3 (integração) | ✅ Feito |
