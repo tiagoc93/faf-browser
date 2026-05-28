@@ -125,11 +125,7 @@ impl HttpClient {
                         && let Ok(retry_str) = retry_after.to_str()
                         && let Ok(secs) = retry_str.parse::<u64>()
                     {
-                        log::warn!(
-                            "HTTP 429 em {}, aguardando {}s (Retry-After)",
-                            url,
-                            secs
-                        );
+                        log::warn!("HTTP 429 em {}, aguardando {}s (Retry-After)", url, secs);
                         tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
                         continue;
                     }
@@ -153,9 +149,7 @@ impl HttpClient {
                     let headers_map: HashMap<String, String> = response
                         .headers()
                         .iter()
-                        .map(|(k, v)| {
-                            (k.to_string(), v.to_str().unwrap_or("").to_string())
-                        })
+                        .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
                         .collect();
                     let body = response.text().await?;
 
@@ -164,11 +158,7 @@ impl HttpClient {
                         && let Some(ref jar_path) = self.config.cookies_jar_path
                         && let Err(e) = store.save_to_file(jar_path)
                     {
-                        log::warn!(
-                            "Falha ao salvar cookies em {}: {}",
-                            jar_path,
-                            e
-                        );
+                        log::warn!("Falha ao salvar cookies em {}: {}", jar_path, e);
                     }
 
                     // Salvar resposta no cache se --cache foi passado
@@ -265,11 +255,19 @@ mod tests {
 
     #[test]
     fn test_retryable_statuses() {
-        assert!(HttpClient::is_retryable(reqwest::StatusCode::INTERNAL_SERVER_ERROR));
+        assert!(HttpClient::is_retryable(
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR
+        ));
         assert!(HttpClient::is_retryable(reqwest::StatusCode::BAD_GATEWAY));
-        assert!(HttpClient::is_retryable(reqwest::StatusCode::SERVICE_UNAVAILABLE));
-        assert!(HttpClient::is_retryable(reqwest::StatusCode::TOO_MANY_REQUESTS));
-        assert!(HttpClient::is_retryable(reqwest::StatusCode::REQUEST_TIMEOUT));
+        assert!(HttpClient::is_retryable(
+            reqwest::StatusCode::SERVICE_UNAVAILABLE
+        ));
+        assert!(HttpClient::is_retryable(
+            reqwest::StatusCode::TOO_MANY_REQUESTS
+        ));
+        assert!(HttpClient::is_retryable(
+            reqwest::StatusCode::REQUEST_TIMEOUT
+        ));
         assert!(!HttpClient::is_retryable(reqwest::StatusCode::NOT_FOUND));
         assert!(!HttpClient::is_retryable(reqwest::StatusCode::BAD_REQUEST));
     }

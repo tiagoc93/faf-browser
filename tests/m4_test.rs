@@ -2,8 +2,8 @@ use clap::Parser;
 use faf_browser::api::commands::{Cli, run};
 use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::thread;
 
 // ---------------------------------------------------------------------------
@@ -45,7 +45,11 @@ async fn test_wait_for_selector_found() {
     ]);
 
     let result = run(cli).await;
-    assert!(result.is_ok(), "wait should find element immediately: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "wait should find element immediately: {:?}",
+        result
+    );
 }
 
 #[tokio::test]
@@ -66,7 +70,11 @@ async fn test_wait_for_selector_found_json() {
     ]);
 
     let result = run(cli).await;
-    assert!(result.is_ok(), "wait --json should find element: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "wait --json should find element: {:?}",
+        result
+    );
 }
 
 #[tokio::test]
@@ -86,7 +94,10 @@ async fn test_wait_for_selector_timeout() {
     ]);
 
     let result = run(cli).await;
-    assert!(result.is_err(), "wait should timeout when element is missing");
+    assert!(
+        result.is_err(),
+        "wait should timeout when element is missing"
+    );
     let err = result.unwrap_err().to_string();
     assert!(
         err.contains("não encontrado") || err.contains("not found"),
@@ -168,7 +179,11 @@ async fn test_retry_exponential() {
     ]);
 
     let result = run(cli).await;
-    assert!(result.is_ok(), "retry should eventually succeed: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "retry should eventually succeed: {:?}",
+        result
+    );
     assert!(
         counter.load(Ordering::SeqCst) >= 3,
         "server should have received at least 3 requests"
@@ -224,7 +239,11 @@ async fn test_retry_429_with_retry_after() {
     ]);
 
     let result = run(cli).await;
-    assert!(result.is_ok(), "429 retry with Retry-After should succeed: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "429 retry with Retry-After should succeed: {:?}",
+        result
+    );
     assert_eq!(
         counter.load(Ordering::SeqCst),
         2,
@@ -273,10 +292,15 @@ async fn test_cache_set_and_get() {
     let mut expired_entry = entry.clone();
     expired_entry.cached_at = 1; // muito no passado
 
-    cache::set_cached(cache_dir_str, "http://example.com/expired", &expired_entry).expect("set_cached should succeed");
+    cache::set_cached(cache_dir_str, "http://example.com/expired", &expired_entry)
+        .expect("set_cached should succeed");
 
     // TTL expirado deve retornar None
-    let expired = cache::get_cached(cache_dir_str, "http://example.com/expired", Duration::from_secs(1));
+    let expired = cache::get_cached(
+        cache_dir_str,
+        "http://example.com/expired",
+        Duration::from_secs(1),
+    );
     assert!(expired.is_none(), "expired cache entry should be removed");
 
     let _ = std::fs::remove_dir_all(&cache_dir);
@@ -319,7 +343,11 @@ async fn test_cache_cli_hit() {
     let cli1 = Cli::parse_from(["faf", &url, "--cache", cache_dir_str, "--cache-ttl", "300"]);
     let result1 = run(cli1).await;
     assert!(result1.is_ok(), "first request should succeed");
-    assert_eq!(counter.load(Ordering::SeqCst), 1, "server should have received 1 request");
+    assert_eq!(
+        counter.load(Ordering::SeqCst),
+        1,
+        "server should have received 1 request"
+    );
 
     // Segunda requisição — deve usar cache
     let cli2 = Cli::parse_from(["faf", &url, "--cache", cache_dir_str, "--cache-ttl", "300"]);
@@ -403,7 +431,8 @@ fn start_cookie_check_server(expected_cookie_substring: &'static str) -> u16 {
 async fn test_cookie_send_from_file() {
     use faf_browser::http::cookies;
 
-    let cookie_path = std::env::temp_dir().join(format!("faf_cookie_send_{}.txt", std::process::id()));
+    let cookie_path =
+        std::env::temp_dir().join(format!("faf_cookie_send_{}.txt", std::process::id()));
     let cookie_path_str = cookie_path.to_str().unwrap();
 
     // Criar arquivo de cookies com domínio 127.0.0.1
@@ -427,7 +456,11 @@ async fn test_cookie_send_from_file() {
     ]);
 
     let result = run(cli).await;
-    assert!(result.is_ok(), "request with cookies should succeed: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "request with cookies should succeed: {:?}",
+        result
+    );
 
     let _ = std::fs::remove_file(&cookie_path);
 }
@@ -466,7 +499,11 @@ async fn test_cookie_jar_save() {
     ]);
 
     let result = run(cli).await;
-    assert!(result.is_ok(), "request with --cookies-jar should succeed: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "request with --cookies-jar should succeed: {:?}",
+        result
+    );
 
     // Verificar que o arquivo foi criado e contém o cookie
     assert!(jar_path.exists(), "cookie jar file should exist");
@@ -516,7 +553,10 @@ fn start_redirect_cookie_server() -> u16 {
 
 #[tokio::test]
 async fn test_cookie_jar_save_on_redirect() {
-    let jar_path = std::env::temp_dir().join(format!("faf_cookie_jar_redirect_{}.txt", std::process::id()));
+    let jar_path = std::env::temp_dir().join(format!(
+        "faf_cookie_jar_redirect_{}.txt",
+        std::process::id()
+    ));
     let jar_path_str = jar_path.to_str().unwrap();
 
     let port = start_redirect_cookie_server();
@@ -529,7 +569,11 @@ async fn test_cookie_jar_save_on_redirect() {
     ]);
 
     let result = run(cli).await;
-    assert!(result.is_ok(), "request with redirect and --cookies-jar should succeed: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "request with redirect and --cookies-jar should succeed: {:?}",
+        result
+    );
 
     assert!(jar_path.exists(), "cookie jar file should exist");
     let content = std::fs::read_to_string(&jar_path).expect("should read jar file");
@@ -597,7 +641,11 @@ async fn test_rate_limit_follow_delay() {
     ]);
 
     let result = run(cli).await;
-    assert!(result.is_ok(), "follow with delay should succeed: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "follow with delay should succeed: {:?}",
+        result
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -663,7 +711,11 @@ async fn test_follow_extract_no_leak() {
 
     // Executar e capturar stdout
     let result = run(cli).await;
-    assert!(result.is_ok(), "follow --extract should succeed: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "follow --extract should succeed: {:?}",
+        result
+    );
 
     // Neste teste, extraímos dados de 3 páginas locais.
     // Cada página tem EXATAMENTE 1 h1 com texto distinto.
@@ -693,7 +745,11 @@ async fn test_show_headers() {
     ]);
 
     let result = run(cli).await;
-    assert!(result.is_ok(), "--show-headers should not crash: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "--show-headers should not crash: {:?}",
+        result
+    );
 }
 
 #[tokio::test]
@@ -707,7 +763,11 @@ async fn test_show_status() {
     ]);
 
     let result = run(cli).await;
-    assert!(result.is_ok(), "--show-status should not crash: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "--show-status should not crash: {:?}",
+        result
+    );
 }
 
 /// Servidor que verifica User-Agent customizado.
@@ -747,5 +807,9 @@ async fn test_custom_user_agent() {
     ]);
 
     let result = run(cli).await;
-    assert!(result.is_ok(), "custom user-agent should be sent: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "custom user-agent should be sent: {:?}",
+        result
+    );
 }

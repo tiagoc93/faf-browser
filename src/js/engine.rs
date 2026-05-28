@@ -475,8 +475,7 @@ impl JsRuntime {
                     }
                 };
 
-                let script_body = match client.get(&resolved_url).await
-                {
+                let script_body = match client.get(&resolved_url).await {
                     Ok(resp) => resp.body,
                     Err(e) => {
                         log::warn!("Falha ao baixar script externo ({}): {}", resolved_url, e);
@@ -916,7 +915,9 @@ mod tests {
         let client = crate::http::client::HttpClient::new(config).unwrap();
         let base_url = url::Url::parse("https://example.com").unwrap();
 
-        rt.execute_page_scripts(&doc, &base_url, &client).await.unwrap();
+        rt.execute_page_scripts(&doc, &base_url, &client)
+            .await
+            .unwrap();
 
         let title = rt.eval("document.title").unwrap();
         assert_eq!(title, "JS OK");
@@ -936,7 +937,9 @@ mod tests {
         let client = crate::http::client::HttpClient::new(config).unwrap();
         let base_url = url::Url::parse("https://example.com").unwrap();
 
-        rt.execute_page_scripts(&doc, &base_url, &client).await.unwrap();
+        rt.execute_page_scripts(&doc, &base_url, &client)
+            .await
+            .unwrap();
 
         let title = rt.eval("document.title").unwrap();
         assert_eq!(title, "RECOVERY");

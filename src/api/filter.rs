@@ -155,8 +155,16 @@ mod tests {
     fn test_matches_not_contains() {
         let r_cat = make_result("a", None, &[], "Link", &[("href", "category/books")]);
         let r_cata = make_result("a", None, &[], "Link", &[("href", "catalogue/books")]);
-        assert!(!QueryFilter::parse("href!~=category").unwrap().matches(&r_cat));
-        assert!(QueryFilter::parse("href!~=category").unwrap().matches(&r_cata));
+        assert!(
+            !QueryFilter::parse("href!~=category")
+                .unwrap()
+                .matches(&r_cat)
+        );
+        assert!(
+            QueryFilter::parse("href!~=category")
+                .unwrap()
+                .matches(&r_cata)
+        );
     }
 
     #[test]

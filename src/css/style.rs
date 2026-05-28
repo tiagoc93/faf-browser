@@ -42,7 +42,7 @@ impl Default for ComputedStyle {
             padding_right: "0".to_string(),
             padding_bottom: "0".to_string(),
             padding_left: "0".to_string(),
-            display: "block".to_string(),
+            display: "".to_string(),
         }
     }
 }
@@ -259,7 +259,7 @@ mod tests {
         assert_eq!(style.padding_right, "0");
         assert_eq!(style.padding_bottom, "0");
         assert_eq!(style.padding_left, "0");
-        assert_eq!(style.display, "block");
+        assert_eq!(style.display, "");
     }
 
     #[test]

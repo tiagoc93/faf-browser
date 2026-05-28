@@ -142,10 +142,9 @@ pub fn parse_set_cookie(
             }
         } else if key.eq_ignore_ascii_case("Expires") {
             // Tenta RFC 2822
-            if let Ok(dt) = time::OffsetDateTime::parse(
-                val,
-                &time::format_description::well_known::Rfc2822,
-            ) {
+            if let Ok(dt) =
+                time::OffsetDateTime::parse(val, &time::format_description::well_known::Rfc2822)
+            {
                 expires = dt.unix_timestamp().max(0) as u64;
             }
         }
@@ -206,9 +205,10 @@ pub fn build_cookie_header(cookies: &[NetscapeCookie], url: &url::Url) -> String
 
 /// Mescla um cookie no jar, substituindo se já existir com mesmo domínio+name+path.
 pub fn merge_cookie(jar: &mut Vec<NetscapeCookie>, cookie: NetscapeCookie) {
-    if let Some(pos) = jar.iter().position(|c| {
-        c.domain == cookie.domain && c.name == cookie.name && c.path == cookie.path
-    }) {
+    if let Some(pos) = jar
+        .iter()
+        .position(|c| c.domain == cookie.domain && c.name == cookie.name && c.path == cookie.path)
+    {
         jar[pos] = cookie;
     } else {
         jar.push(cookie);
@@ -314,7 +314,15 @@ mod tests {
 
     #[test]
     fn test_parse_netscape_line() {
-        let line = vec![".example.com", "TRUE", "/", "FALSE", "1735689600", "sid", "abc123"];
+        let line = vec![
+            ".example.com",
+            "TRUE",
+            "/",
+            "FALSE",
+            "1735689600",
+            "sid",
+            "abc123",
+        ];
         let c = parse_netscape_line(&line).unwrap();
         assert_eq!(c.domain, ".example.com");
         assert_eq!(c.path, "/");

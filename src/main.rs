@@ -8,8 +8,7 @@ async fn main() -> anyhow::Result<()> {
     // Configura logging: --verbose ativa info level
     if cli.verbose || std::env::var("RUST_LOG").is_ok() {
         env_logger::Builder::from_env(
-            env_logger::Env::default()
-                .default_filter_or(if cli.verbose { "info" } else { "warn" }),
+            env_logger::Env::default().default_filter_or(if cli.verbose { "info" } else { "warn" }),
         )
         .init();
     } else {

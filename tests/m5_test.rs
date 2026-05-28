@@ -52,7 +52,9 @@ fn test_stdin_mode() {
         let stdin = child.stdin.take().unwrap();
         let mut stdin = std::io::BufWriter::new(stdin);
         stdin.write_all(b"document.title\n").unwrap();
-        stdin.write_all(b"document.querySelector('h1').text\n").unwrap();
+        stdin
+            .write_all(b"document.querySelector('h1').text\n")
+            .unwrap();
     }
 
     let output = child.wait_with_output().unwrap();
@@ -101,7 +103,9 @@ fn test_repl_mode() {
         let stdin = child.stdin.take().unwrap();
         let mut stdin = std::io::BufWriter::new(stdin);
         stdin.write_all(b"document.title\n").unwrap();
-        stdin.write_all(b"document.querySelector('h1').text\n").unwrap();
+        stdin
+            .write_all(b"document.querySelector('h1').text\n")
+            .unwrap();
         stdin.write_all(b".exit\n").unwrap();
     }
 
@@ -217,7 +221,11 @@ async fn test_click_subcommand_success() {
     ]);
 
     let result = run(cli).await;
-    assert!(result.is_ok(), "click subcommand should succeed: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "click subcommand should succeed: {:?}",
+        result
+    );
 }
 
 #[tokio::test]
@@ -254,7 +262,11 @@ async fn test_click_js_bridge() {
     ]);
 
     let result = run(cli).await;
-    assert!(result.is_ok(), "JS click bridge should succeed: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "JS click bridge should succeed: {:?}",
+        result
+    );
 }
 
 #[tokio::test]
@@ -295,7 +307,9 @@ fn test_click_via_stdin() {
     {
         let stdin = child.stdin.take().unwrap();
         let mut stdin = std::io::BufWriter::new(stdin);
-        stdin.write_all(b"document.querySelector('#btn').click()\n").unwrap();
+        stdin
+            .write_all(b"document.querySelector('#btn').click()\n")
+            .unwrap();
     }
 
     let output = child.wait_with_output().unwrap();
@@ -404,10 +418,12 @@ fn start_basic_server() -> u16 {
             };
             let mut buf = [0u8; 1024];
             let _ = stream.read(&mut buf);
-            let body = "<html><body><h1>Scroll Test</h1><div id='target'>Target</div></body></html>";
+            let body =
+                "<html><body><h1>Scroll Test</h1><div id='target'>Target</div></body></html>";
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                body.len(), body
+                body.len(),
+                body
             );
             let _ = stream.write_all(response.as_bytes());
         }
@@ -441,7 +457,8 @@ fn test_scroll_to() {
     assert!(
         output.status.success(),
         "scrollTo should exit successfully. stdout: {}, stderr: {}",
-        stdout, stderr
+        stdout,
+        stderr
     );
     assert!(
         stdout.contains("500"),
@@ -476,7 +493,8 @@ fn test_scroll_by() {
     assert!(
         output.status.success(),
         "scrollBy should exit successfully. stdout: {}, stderr: {}",
-        stdout, stderr
+        stdout,
+        stderr
     );
     assert!(
         stdout.contains("200"),
@@ -550,7 +568,11 @@ async fn test_watch_max_checks() {
     ]);
 
     let result = run(cli).await;
-    assert!(result.is_ok(), "watch with max-checks should succeed: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "watch with max-checks should succeed: {:?}",
+        result
+    );
 }
 
 #[tokio::test]
@@ -588,7 +610,8 @@ fn start_screenshot_server() -> u16 {
             <body><h1>Titulo</h1><p>Paragrafo</p></body></html>"#;
         let response = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-            body.len(), body
+            body.len(),
+            body
         );
         let _ = stream.write_all(response.as_bytes());
     });
@@ -603,14 +626,20 @@ async fn test_screenshot_generated() {
         "faf",
         "screenshot",
         &format!("http://127.0.0.1:{}/", port),
-        "--width", "800",
-        "--output", &output,
+        "--width",
+        "800",
+        "--output",
+        &output,
     ]);
     let result = run(cli).await;
     assert!(result.is_ok(), "screenshot should succeed: {:?}", result);
     assert!(std::path::Path::new(&output).exists(), "PNG deve existir");
     let metadata = std::fs::metadata(&output).unwrap();
-    assert!(metadata.len() >= 500, "PNG deve ter >= 500 bytes, tinha {}", metadata.len());
+    assert!(
+        metadata.len() >= 500,
+        "PNG deve ter >= 500 bytes, tinha {}",
+        metadata.len()
+    );
     let _ = std::fs::remove_file(&output);
 }
 
@@ -624,7 +653,8 @@ fn start_screenshot_no_css_server() -> u16 {
         let body = r#"<html><body><h1>No CSS</h1><p>Plain text</p></body></html>"#;
         let response = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-            body.len(), body
+            body.len(),
+            body
         );
         let _ = stream.write_all(response.as_bytes());
     });
@@ -639,14 +669,24 @@ async fn test_screenshot_no_css() {
         "faf",
         "screenshot",
         &format!("http://127.0.0.1:{}/", port),
-        "--width", "400",
-        "--output", &output,
+        "--width",
+        "400",
+        "--output",
+        &output,
     ]);
     let result = run(cli).await;
-    assert!(result.is_ok(), "screenshot no-css should succeed: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "screenshot no-css should succeed: {:?}",
+        result
+    );
     assert!(std::path::Path::new(&output).exists(), "PNG deve existir");
     let metadata = std::fs::metadata(&output).unwrap();
-    assert!(metadata.len() >= 500, "PNG deve ter >= 500 bytes, tinha {}", metadata.len());
+    assert!(
+        metadata.len() >= 500,
+        "PNG deve ter >= 500 bytes, tinha {}",
+        metadata.len()
+    );
     let _ = std::fs::remove_file(&output);
 }
 
@@ -661,7 +701,8 @@ fn start_screenshot_display_none_server() -> u16 {
             <body><h1>Visible</h1><p class="hidden">Hidden</p></body></html>"#;
         let response = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-            body.len(), body
+            body.len(),
+            body
         );
         let _ = stream.write_all(response.as_bytes());
     });
@@ -676,14 +717,24 @@ async fn test_screenshot_display_none() {
         "faf",
         "screenshot",
         &format!("http://127.0.0.1:{}/", port),
-        "--width", "400",
-        "--output", &output,
+        "--width",
+        "400",
+        "--output",
+        &output,
     ]);
     let result = run(cli).await;
-    assert!(result.is_ok(), "screenshot display:none should succeed: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "screenshot display:none should succeed: {:?}",
+        result
+    );
     assert!(std::path::Path::new(&output).exists(), "PNG deve existir");
     let metadata = std::fs::metadata(&output).unwrap();
-    assert!(metadata.len() >= 500, "PNG deve ter >= 500 bytes, tinha {}", metadata.len());
+    assert!(
+        metadata.len() >= 500,
+        "PNG deve ter >= 500 bytes, tinha {}",
+        metadata.len()
+    );
     let _ = std::fs::remove_file(&output);
 }
 
@@ -713,7 +764,8 @@ fn start_disappearing_element_server() -> u16 {
             };
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                body.len(), body
+                body.len(),
+                body
             );
             let _ = stream.write_all(response.as_bytes());
         }
@@ -731,7 +783,11 @@ async fn test_click_disappearing_element() {
         "#btn",
     ]);
     let result = run(cli).await;
-    assert!(result.is_ok(), "click on disappearing element should succeed: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "click on disappearing element should succeed: {:?}",
+        result
+    );
 }
 
 #[tokio::test]
@@ -742,14 +798,24 @@ async fn test_screenshot_large_width() {
         "faf",
         "screenshot",
         &format!("http://127.0.0.1:{}/", port),
-        "--width", "1920",
-        "--output", &output,
+        "--width",
+        "1920",
+        "--output",
+        &output,
     ]);
     let result = run(cli).await;
-    assert!(result.is_ok(), "screenshot large width should succeed: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "screenshot large width should succeed: {:?}",
+        result
+    );
     assert!(std::path::Path::new(&output).exists(), "PNG deve existir");
     let metadata = std::fs::metadata(&output).unwrap();
-    assert!(metadata.len() >= 500, "PNG deve ter >= 500 bytes, tinha {}", metadata.len());
+    assert!(
+        metadata.len() >= 500,
+        "PNG deve ter >= 500 bytes, tinha {}",
+        metadata.len()
+    );
     let _ = std::fs::remove_file(&output);
 }
 
@@ -767,7 +833,11 @@ async fn test_watch_interval_zero() {
         "3",
     ]);
     let result = run(cli).await;
-    assert!(result.is_ok(), "watch with interval 0 should succeed: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "watch with interval 0 should succeed: {:?}",
+        result
+    );
 }
 
 #[test]
@@ -795,7 +865,8 @@ fn test_scroll_clamp_negative() {
     assert!(
         output.status.success(),
         "scroll clamp should exit successfully. stdout: {}, stderr: {}",
-        stdout, stderr
+        stdout,
+        stderr
     );
     assert!(
         stdout.contains("0"),

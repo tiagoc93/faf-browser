@@ -690,12 +690,11 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                             } else {
                                 let tag = result.get("tag").and_then(|v| v.as_str()).unwrap_or("?");
                                 let id = result.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                                let text = result.get("text").and_then(|v| v.as_str()).unwrap_or("");
+                                let text =
+                                    result.get("text").and_then(|v| v.as_str()).unwrap_or("");
                                 println!(
                                     "✅ Elemento encontrado: <{}> id=\"{}\" texto: {}",
-                                    tag,
-                                    id,
-                                    text
+                                    tag, id, text
                                 );
                             }
                             return Ok(());
@@ -865,7 +864,10 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             crate::render::screenshot::render_to_image(&doc, &config, &args.output)?;
 
             if cli.json {
-                println!("{}", serde_json::json!({"screenshot": args.output, "width": args.width, "height": args.height }));
+                println!(
+                    "{}",
+                    serde_json::json!({"screenshot": args.output, "width": args.width, "height": args.height })
+                );
             } else {
                 println!("📸 Screenshot salvo em: {}", args.output);
             }
@@ -906,7 +908,10 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                     }
                     ".json" => {
                         json_mode = !json_mode;
-                        println!("Modo JSON: {}", if json_mode { "ligado" } else { "desligado" });
+                        println!(
+                            "Modo JSON: {}",
+                            if json_mode { "ligado" } else { "desligado" }
+                        );
                     }
                     ".clear" => {
                         println!("clear");
@@ -914,7 +919,9 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                     _ => {
                         if json_mode {
                             match rt.eval_json_with_timeout(trimmed, cli.js_timeout) {
-                                Ok(result) => println!("{}", serde_json::to_string_pretty(&result)?),
+                                Ok(result) => {
+                                    println!("{}", serde_json::to_string_pretty(&result)?)
+                                }
                                 Err(e) => eprintln!("Erro: {}", e),
                             }
                         } else {

@@ -83,11 +83,10 @@ fn build_node_recursive(
     for child in element.children() {
         match child.value() {
             scraper::Node::Element(_) => {
-                if let Some(child_el) = scraper::ElementRef::wrap(child) {
-                    if let Some(child_node) = build_node_recursive(child_el, computed, &style) {
+                if let Some(child_el) = scraper::ElementRef::wrap(child)
+                    && let Some(child_node) = build_node_recursive(child_el, computed, &style) {
                         visual.children.push(child_node);
                     }
-                }
             }
             scraper::Node::Text(text) => {
                 let txt = text.text.trim();
@@ -122,6 +121,10 @@ fn is_skip_tag(tag: &str) -> bool {
 
 fn classify_node_type(tag: &str, style: &ComputedStyle) -> NodeType {
     let display = style.display.trim();
+    if display.is_empty() {
+        // Sem display explícito: usar heurística da tag
+        return tag_heuristic(tag);
+    }
     if display == "inline" {
         return NodeType::Inline;
     }
@@ -140,18 +143,18 @@ fn classify_node_type(tag: &str, style: &ComputedStyle) -> NodeType {
     }
 
     // Heurística padrão baseada na tag
+    tag_heuristic(tag)
+}
+
+fn tag_heuristic(tag: &str) -> NodeType {
     match tag {
-        "div" | "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "ul" | "ol" | "li"
-        | "section" | "article" | "header" | "footer" | "nav" | "aside" | "main" | "body"
-        | "html" | "form" | "table" | "tr" | "td" | "th" | "blockquote" | "pre" | "figure"
-        | "figcaption" | "dl" | "dt" | "dd" | "fieldset" | "details" | "summary" => {
-            NodeType::Block
-        }
-        "span" | "a" | "strong" | "b" | "em" | "i" | "u" | "small" | "code" | "label"
-        | "abbr" | "cite" | "q" | "img" | "br" | "input" | "textarea" | "select"
-        | "button" | "sub" | "sup" | "mark" | "time" | "kbd" | "samp" | "var" => {
-            NodeType::Inline
-        }
+        "div" | "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "ul" | "ol" | "li" | "section"
+        | "article" | "header" | "footer" | "nav" | "aside" | "main" | "body" | "html" | "form"
+        | "table" | "tr" | "td" | "th" | "blockquote" | "pre" | "figure" | "figcaption" | "dl"
+        | "dt" | "dd" | "fieldset" | "details" | "summary" => NodeType::Block,
+        "span" | "a" | "strong" | "b" | "em" | "i" | "u" | "small" | "code" | "label" | "abbr"
+        | "cite" | "q" | "img" | "br" | "input" | "textarea" | "select" | "button" | "sub"
+        | "sup" | "mark" | "time" | "kbd" | "samp" | "var" => NodeType::Inline,
         _ => NodeType::Block,
     }
 }
@@ -258,7 +261,8 @@ mod tests {
 
     #[test]
     fn test_display_none_ignored() {
-        let html = r#"<html><body><div class="hidden">X</div><div class="visible">Y</div></body></html>"#;
+        let html =
+            r#"<html><body><div class="hidden">X</div><div class="visible">Y</div></body></html>"#;
         let doc = HtmlDocument::parse(html);
         let css = ".hidden { display: none; }";
         let sheet = parse_css(css).unwrap();
@@ -272,10 +276,13 @@ mod tests {
             node.children.iter().any(|c| has_tag(c, tag))
         }
 
-        assert!(!has_tag(&tree, "div") || tree.children.iter().all(|c| {
-            // O div.hidden deve ter sido removido; apenas o visible pode existir se CSS bater
-            true
-        }));
+        assert!(
+            !has_tag(&tree, "div")
+                || tree.children.iter().all(|_c| {
+                    // O div.hidden deve ter sido removido; apenas o visible pode existir se CSS bater
+                    true
+                })
+        );
     }
 
     #[test]

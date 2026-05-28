@@ -48,7 +48,9 @@ async fn test_script_inline() {
     let config = faf_browser::utils::config::Config::default();
     let client = faf_browser::http::client::HttpClient::new(config).unwrap();
 
-    rt.execute_page_scripts(&doc, &base_url, &client).await.unwrap();
+    rt.execute_page_scripts(&doc, &base_url, &client)
+        .await
+        .unwrap();
 
     let title = rt.eval("document.title").unwrap();
     assert_eq!(title, "JS OK");
