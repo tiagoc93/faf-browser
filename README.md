@@ -539,44 +539,30 @@ O FAF Browser agora tem um motor de layout PRÓPRIO com árvore visual, fluxo bl
 
 ### 📋 M7 — Playwright Parity + Polish (Planejado)
 
-Fechar as lacunas visuais e de posicionamento para que o screenshot do FAF seja equivalente ao Playwright — mas mais rápido.
+Fechar as lacunas restantes pra screenshot fiel: absolute positioning, text rendering real, overflow, performance.
 
 | Task | Feature | Prioridade |
 |------|---------|:----------:|
-| **T053** | **Playwright Comparison Framework** — diff visual + métricas SSIM | 🔴 |
-| **T054** | **position: absolute + fixed** — containing block, viewport | 🔴 |
-| **T055** | **Text Rendering Accuracy** — ab_glyph real, line-height, text-align, font-weight | 🟡 |
-| **T056** | **Overflow Handling** — hidden com clip, visible | 🟡 |
-| **T057** | **Comparison & Gap Fixing** — rodar comparação, corrigir gaps | 🟡 |
-| **T058** | **Performance Benchmark** — FAF vs Playwright, otimizações | 🟡 |
-| **T059** | **Testes M7** — 8+ testes de integração | 🔴 |
+| **T053** | **position: absolute + fixed** — containing block, viewport | 🔴 |
+| **T054** | **Text Rendering Accuracy** — ab_glyph real, text-align, line-height, font-weight | 🟡 |
+| **T055** | **Overflow Handling** — hidden com clip, visible | 🟡 |
+| **T056** | **Performance & Font Cache** — cache de fontes, skip viewport, benchmark | 🟡 |
+| **T057** | **Testes M7** — 6+ testes de integração | 🔴 |
 
 ```bash
-📦 7 tasks · 📅 Previsão: 5-8 dias
-🎯 Meta: Screenshot FAF ≈ Playwright, 2×+ rápido
+📦 5 tasks · 📅 Previsão: 4-6 dias
+🎯 Meta: Screenshot fiel, < 500ms, 295+ testes
 ```
-
-#### Stack M7 (adicionado)
-
-| Crate | Versão | Função |
-|-------|--------|--------|
-| — | — | Playwright (Python) para comparação |
-| `image` | 0.25 | Já incluso, usado para diff pixel |
-| — | — | Benchmark tool (bash + hyperfine) |
 
 #### Como começar o M7
 
 ```bash
-# 1. Rodar a tool de comparação
-python3 tools/compare-playwright/compare.py --url https://example.com
-
-# 2. Ver o diff gerado em /tmp/faf-compare/
-# 3. Implementar position:absolute (T054)
-# 4. Implementar text rendering (T055)
-# 5. Implementar overflow (T056)
-# 6. Re-rodar comparação, iterar (T057)
-# 7. Benchmark (T058)
-# 8. Testes (T059)
+# 1. Implementar position:absolute + fixed (T053)  
+# 2. Implementar text rendering com ab_glyph real (T054)
+# 3. Implementar overflow: hidden (T055)
+# 4. Otimizar performance + cache de fontes (T056)
+# 5. Testes (T057)
+# A cada task: renderizar página real, verificar visualmente, ajustar
 ```
 
 Veja `TASKS_M7.md` para specs detalhadas.

@@ -1,57 +1,30 @@
 # 🎯 FAF Browser — M7: Playwright Parity + Polish
 
 **Status:** Planejado
-**Previsão:** 5-8 dias
-**Meta:** Screenshot com qualidade visual equivalente ao Playwright, mas com mais performance
+**Previsão:** 4-6 dias
+**Meta:** Screenshot fiel à página, com qualidade visual comparável ao Playwright
 
 ---
 
 ## 🎯 Objetivo
 
-O M6 entregou um motor de layout funcional com árvore visual, fluxo block/inline, text wrap, backgrounds, bordas, imagens e relative positioning. O M7 fecha as lacunas restantes para que o screenshot do FAF Browser seja visualmente indistinguível do Playwright — e mais rápido.
+O M6 entregou um motor de layout funcional com árvore visual, fluxo block/inline, text wrap, backgrounds, bordas, imagens e relative positioning. O M7 fecha as lacunas restantes para que o screenshot do FAF Browser seja fiel ao que é visto na página real.
+
+A referência é a **qualidade** do Playwright, não a ferramenta em si. A verificação é visual: renderiza uma página real, olha, ajusta, repete.
 
 **Áreas de melhoria identificadas no M6:**
 1. `position: absolute` — implementação incompleta (timeout no Kimi)
 2. `position: fixed` — não implementado
-3. Overflow — conteúdo que extravasa o container não é tratado
-4. `display: flex` — sem implementação (layout engine só block/inline)
-5. Text rendering — `estimate_text_width()` é heurística (chars × font_size × 0.5), não real
-6. Line-height — fixo em 1.2×, sem suporte a line-height explícito
-7. Semântica visual — `text-align`, `vertical-align`, `font-weight` sem efeito real
-8. **Ferramenta de comparação Playwright** — sem ela, não sabemos o que está diferente
+3. Text rendering — `estimate_text_width()` é heurística (chars × font_size × 0.5), não real
+4. Line-height — fixo em 1.2×, sem suporte a line-height explícito
+5. Semântica visual — `text-align`, `font-weight` sem efeito real
+6. Overflow — conteúdo que extravasa o container não é clipado
 
 ---
 
 ## 📋 Tasks
 
----
-
-### 🔴 T053 — Playwright Comparison Framework (2 dias)
-
-**Objetivo:** Criar ferramenta CLI + script que compara screenshot do FAF com Playwright e gera diff visual + relatório.
-
-**Arquivos:** `tools/compare-playwright/` (novo diretório), `Cargo.toml` (opcional)
-
-| Subtask | Descrição |
-|---------|-----------|
-| T053.1 | Script Python/Node para gerar screenshot de uma URL com Playwright (headless, 1280x800) |
-| T053.2 | Script que roda FAF screenshot da mesma URL com mesmas dimensões |
-| T053.3 | Comparação pixel-a-pixel: `faf-expected.png` vs `faf-actual.png` → `faf-diff.png` |
-| T053.4 | Métricas: diff %, MSE, SSIM entre as duas imagens |
-| T053.5 | Relatório HTML com side-by-side: expected, actual, diff highlight |
-| T053.6 | Batelada: comparar N URLs conhecidas (wikipedia, books.toscrape, example.com, etc) |
-
-**Flags:**
-- `--url` — URL única para comparar
-- `--batch` — roda todas as URLs da lista
-- `--output-dir` — onde salvar os screenshots + diffs
-- `--threshold` — % de diff tolerável (default: 1%)
-
-**Critério de aceite:** `tools/compare-playwright/compare.py --url https://example.com` produz 3 PNGs (expected, actual, diff) + relatório com métricas.
-
----
-
-### 🔴 T054 — position: absolute + fixed (2 dias)
+### 🔴 T053 — position: absolute + fixed (2 dias)
 
 **Objetivo:** Completar o suporte a posicionamento CSS que foi cortado por timeout no M6.
 
@@ -59,48 +32,48 @@ O M6 entregou um motor de layout funcional com árvore visual, fluxo block/inlin
 
 | Subtask | Descrição |
 |---------|-----------|
-| T054.1 | Adicionar `bottom`, `right` ao ComputedStyle (já tem top, left) |
-| T054.2 | `position: absolute` — remover do fluxo normal (não contribui pra altura do pai) |
-| T054.3 | Encontrar ancestral positionado (first parent with position ≠ static) |
-| T054.4 | Usar viewport (0,0) como fallback se nenhum ancestral positionado |
-| T054.5 | Posicionar absolute baseado em top/right/bottom/left em relação ao **containing block** |
-| T054.6 | `position: fixed` — posicionar em relação à viewport sempre (ignorar scroll) |
-| T054.7 | Elementos absolute NÃO são iterados no fluxo normal (lista separada para render) |
-| T054.8 | z-index também funciona em absolute (implementação já existe no relative) |
+| T053.1 | Adicionar `bottom`, `right` ao ComputedStyle (já tem top, left) |
+| T053.2 | `position: absolute` — elemento removido do fluxo normal do pai (não contribui pra altura) |
+| T053.3 | Encontrar ancestral positionado (first parent cujo `position ≠ static`) |
+| T053.4 | Usar viewport (0,0) como fallback se nenhum ancestral positionado |
+| T053.5 | Posicionar absolute baseado em top/right/bottom/left em relação ao **containing block** |
+| T053.6 | `position: fixed` — posicionar em relação à viewport sempre (ignora scroll) |
+| T053.7 | Elementos absolute NÃO iterados no fluxo normal — lista separada pra render |
+| T053.8 | z-index também funciona com absolute (já implementado no relative) |
 
 **⚠️ Edge cases:**
-- Ancestral positionado pode ser qualquer ancestor, não só pai direto
-- Se top + bottom estão setados, altura = (container_height - top - bottom)
-- Se left + right estão setados, largura = (container_width - left - right)
-- `position: fixed` mesmo ancestral que absolute mas com viewport como containing block
+- Ancestral positionado = qualquer ancestor que não seja static (relative, absolute, fixed)
+- Se top + bottom setados: altura = (container_height - top - bottom)
+- Se left + right setados: largura = (container_width - left - right)
+- `position: fixed` usa viewport como containing block
 - Absolute com `width: auto` = conteúdo encolhe ao redor dos filhos
 
-**Critério de aceite:** Teste com 3 divs aninhadas, div interna com `position: absolute; top: 10px; left: 10px` aparece na posição correta relativa ao ancestral positionado, não ao pai imediato.
+**Critério de aceite:** Teste com 3 divs aninhadas, div interna com `position: absolute; top: 10px; left: 10px` aparece na posição correta relativa ao ancestral positionado mais próximo.
 
 ---
 
-### 🟡 T055 — Text Rendering Accuracy (1 dia)
+### 🟡 T054 — Text Rendering Accuracy (1 dia)
 
-**Objetivo:** Substituir a heurística `estimate_text_width()` por medição real com ab_glyph, e implementar suporte a line-height explícito, text-align e font-weight.
+**Objetivo:** Substituir a heurística `estimate_text_width()` por medição real com ab_glyph, e implementar line-height explícito, text-align e font-weight.
 
-**Arquivos:** `src/render/layout.rs`, `src/render/screenshot.rs`
+**Arquivos:** `src/render/layout.rs`, `src/render/screenshot.rs`, `src/css/style.rs`
 
 | Subtask | Descrição |
 |---------|-----------|
-| T055.1 | Criar `measure_text_width(text, font, font_size) -> f32` usando ab_glyph real (h_advance de cada glyph) |
-| T055.2 | Substituir `estimate_text_width()` por `measure_text_width()` no layout.rs |
-| T055.3 | Implementar `line-height` explícito no ComputedStyle (default: "normal" = 1.2× font_size) |
-| T055.4 | `text-align: left` (default), `center`, `right` |
-| T055.5 | `font-weight` mais leve: pelo menos bold (700+) renderiza mais grosso |
-| T055.6 | Whitespace collapsing: múltiplos espaços → 1 espaço (já parcialmente feito) |
+| T054.1 | Criar `measure_text_width(text, font, font_size) -> f32` usando h_advance real de cada glyph do ab_glyph |
+| T054.2 | Substituir `estimate_text_width()` → `measure_text_width()` no layout.rs |
+| T054.3 | Implementar `line-height` explícito no ComputedStyle (default: "normal" = 1.2× font_size) |
+| T054.4 | `text-align: left` (default), `center`, `right` na render_node() |
+| T054.5 | `font-weight` bold (700+) renderiza com fonte bold (se disponível) |
+| T054.6 | Whitespace collapsing: múltiplos espaços → 1 espaço |
 
-**⚠️ Observação:** `measure_text_width` com ab_glyph real vai tornar o text wrap MUITO mais preciso. A heurística atual (chars × font_size × 0.5) é ~30% imprecisa para fontes variadas.
+**⚠️ Impacto:** `measure_text_width` com ab_glyph real vai tornar o text wrap MUITO mais preciso. A heurística atual (chars × font_size × 0.5) é ~30% imprecisa.
 
-**Critério de aceite:** Texto com `font-size: 20px` em viewport de 400px quebra no mesmo lugar que no Playwright.
+**Critério de aceite:** Texto com `font-size: 20px` em viewport de 400px quebra de linha em posição visualmente correta.
 
 ---
 
-### 🟡 T056 — Overflow Handling (1 dia)
+### 🟡 T055 — Overflow Handling (1 dia)
 
 **Objetivo:** Tratar conteúdo que extravasa o container.
 
@@ -108,113 +81,77 @@ O M6 entregou um motor de layout funcional com árvore visual, fluxo block/inlin
 
 | Subtask | Descrição |
 |---------|-----------|
-| T056.1 | `overflow: hidden` — clipar conteúdo fora do rect do pai no render_node() |
-| T056.2 | `overflow: visible` (default) — conteúdo extravasa sem clip |
-| T056.3 | `overflow: scroll` / `auto` — sem scroll real, apenas trata como hidden + indicador |
-| T056.4 | Implementar clip via tiny_skia: salvar clip rect antes de desenhar filhos, restaurar depois |
+| T055.1 | `overflow: visible` (default) — conteúdo extravasa sem corte |
+| T055.2 | `overflow: hidden` — clipar conteúdo fora do rect do pai no render_node() |
+| T055.3 | Implementar clip via tiny_skia: salvar clip rect antes de filhos, restaurar depois |
+| T055.4 | `overflow: scroll` / `auto` — trata como hidden (sem scroll real) |
 
-**Critério de aceite:** `<div style="overflow: hidden; width: 50px; height: 50px;"><div style="width: 200px;">X</div></div>` — o filho de 200px é clipado para 50×50.
+**Critério de aceite:** `<div style="overflow: hidden; width: 50px; height: 50px;"><div style="width: 200px;">X</div></div>` — filho de 200px clipado para 50×50.
 
 ---
 
-### 🟡 T057 — Comparison & Gap Fixing (2 dias)
+### 🟡 T056 — Performance & Font Cache (1 dia)
 
-**Objetivo:** Rodar o Playwright Comparison Framework (T053) e corrigir os gaps encontrados.
+**Objetivo:** Medir e otimizar performance do screenshot.
 
-**Arquivos:** Variados conforme os gaps descobertos
+**Arquivos:** `src/render/screenshot.rs` (principal), `src/render/tree.rs`
 
 | Subtask | Descrição |
 |---------|-----------|
-| T057.1 | Rodar batch de comparação com 10+ URLs |
-| T057.2 | Analisar diffs e categorizar gaps: layout, cor, borda, texto, imagem |
-| T057.3 | Corrigir os 3 maiores gaps (prioridade por impacto visual) |
-| T057.4 | Re-rodar comparação, verificar melhoria |
-| T057.5 | Documentar gaps restantes como "known limitations" |
+| T056.1 | Cache de fontes: carregar TTF uma vez, reusar em todos os nós (atualmente load_font_simple é chamado por nó) |
+| T056.2 | Pular renderização de nós fora da viewport (early skip no render_node) |
+| T056.3 | Medir tempo gasto em cada etapa: parse CSS → layout tree → compute_layout → render_node |
+| T056.4 | Otimizar gargalos identificados |
 
-**⚠️ Importante:** Esta task é ITERATIVA. Cada gap corrigido pode revelar novos gaps. Foco em corrigir o que mais impacta a percepção visual (posicionamento > cor > textura).
-
-**Critério de aceite:** Pelo menos 5 URLs com diff < 5% (vs Playwright).
+**Critério de aceite:** Screenshot de página real (ex: books.toscrape) em < 500ms. FAF notavelmente mais rápido que abrir um navegador.
 
 ---
 
-### 🟡 T058 — Performance Benchmark (1 dia)
+### 🔴 T057 — Testes M7 + Regressão (1 dia)
 
-**Objetivo:** Medir e otimizar performance do screenshot FAF vs Playwright.
-
-**Arquivos:** `tools/benchmark/` (novo), variados
-
-| Subtask | Descrição |
-|---------|-----------|
-| T058.1 | Script de benchmark: tempo de screenshot FAF vs Playwright para mesma URL |
-| T058.2 | Medir: tempo total, tempo de layout, tempo de render (separados) |
-| T058.3 | Identificar gargalos (provável: load_font_simple para cada nó) |
-| T058.4 | Cache de fontes (carregar uma vez, reusar) |
-| T058.5 | Otimizar render_node para pular nós invisíveis (fora da viewport) |
-| T058.6 | Resultado: FAF deve ser 3-5× mais rápido que Playwright |
-
-**Critério de aceite:** `tools/benchmark/bench.sh` gera relatório com tempos comparativos. FAF pelo menos 2× mais rápido que Playwright na mesma URL.
-
----
-
-### 🔴 T059 — Testes M7 + Regressão (1 dia)
-
-**Objetivo:** Garantir que M7 não quebra nada e os novos recursos têm cobertura.
+**Objetivo:** Garantir que M7 não quebra nada e os novos recursos têm cobertura de teste.
 
 **Arquivos:** `tests/m7_test.rs` (novo)
 
 | Subtask | Descrição |
 |---------|-----------|
-| T059.1 | Teste de position: absolute com ancestral positionado |
-| T059.2 | Teste de position: fixed (viewport) |
-| T059.3 | Teste de overflow: hidden com clip |
-| T059.4 | Teste de text-align: center/right |
-| T059.5 | Teste de line-height explícito |
-| T059.6 | Teste de regressão: 287+ testes existentes continuam passando |
-| T059.7 | Teste de comparação visual (se T053 estiver pronto) |
+| T057.1 | Teste de position: absolute com ancestral positionado |
+| T057.2 | Teste de position: fixed (viewport) |
+| T057.3 | Teste de overflow: hidden com clip |
+| T057.4 | Teste de text-align: center/right |
+| T057.5 | Teste de line-height explícito |
+| T057.6 | Teste de regressão: 287+ testes existentes continuam passando |
 
 **Critério de aceite:** 295+ testes passando, 0 falhas, clippy limpo.
 
 ---
 
-## 📐 Estrutura final esperada
+## 📐 Estrutura esperada
 
 ```
 faf-browser/
-├── tools/
-│   ├── compare-playwright/
-│   │   ├── compare.py          ← Script de comparação Playwright × FAF
-│   │   ├── urls.txt            ← Lista de URLs para batch
-│   │   └── requirements.txt    ← playwright, Pillow, numpy
-│   └── benchmark/
-│       └── bench.sh            ← Script de benchmark
-├── src/
-│   └── render/
-│       ├── mod.rs
-│       ├── screenshot.rs
-│       ├── tree.rs
-│       ├── layout.rs           ← T054 (absolute), T055 (text width), T056 (overflow)
-│       ├── background.rs
-│       ├── border.rs
-│       └── image.rs
+├── src/render/
+│   ├── layout.rs       ← T053 (absolute), T054 (text width), T055 (overflow)
+│   ├── screenshot.rs   ← T054 (text-align), T055 (clip), T056 (cache)
+│   ├── tree.rs
+│   └── ...
 ├── tests/
-│   └── m7_test.rs              ← T059
-├── TASKS_M7.md                 ← Este arquivo
-└── README.md                   ← Roadmap atualizado
+│   └── m7_test.rs      ← T057
+└── TASKS_M7.md
 ```
 
 ---
 
-## 🧪 Critérios de Aceite Gerais M7
+## 🧪 Critérios de Aceite Gerais
 
 - [ ] position: absolute funciona com ancestral positionado e viewport fallback
 - [ ] position: fixed funciona independente de scroll
-- [ ] Playwright Comparison Framework produz diffs com métricas
-- [ ] Pelo menos 5 URLs com diff < 5% vs Playwright
 - [ ] Text wrap usa ab_glyph real (não heurística)
 - [ ] text-align: center/right funcionam
 - [ ] line-height explícito respeitado
 - [ ] overflow: hidden clipa conteúdo
-- [ ] FAF 2×+ mais rápido que Playwright
+- [ ] Cache de fontes (carrega uma vez, reusa)
+- [ ] Screenshot de página real em < 500ms
 - [ ] 295+ testes passando
 - [ ] Build release com 0 warnings
 - [ ] cargo clippy limpo
@@ -230,6 +167,6 @@ faf-browser/
 | Text align | ❌ | **left + center + right** |
 | Line-height | Fixo 1.2× | **Explícito** |
 | Overflow | ❌ Ignorado | **hidden + visible** |
-| Comparação Playwright | ❌ | **Framework de diff + relatório** |
-| Performance | Não medido | **Benchmarkado, 2×+ rápido** |
+| Font cache | Load por nó | **Uma vez, reusado** |
+| Performance | Não medido | **Otimizado, < 500ms** |
 | Testes | 287 | **295+** |
