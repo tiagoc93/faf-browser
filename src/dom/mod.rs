@@ -162,7 +162,8 @@ mod tests {
 
     #[test]
     fn test_parse_title() {
-        let doc = HtmlDocument::parse("<html><head><title>Teste</title></head><body></body></html>");
+        let doc =
+            HtmlDocument::parse("<html><head><title>Teste</title></head><body></body></html>");
         assert_eq!(doc.title(), Some("Teste".to_string()));
     }
 

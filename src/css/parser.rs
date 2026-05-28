@@ -1,5 +1,5 @@
 use anyhow::Result;
-use cssparser::{Parser, ParserInput, Token, ToCss};
+use cssparser::{Parser, ParserInput, ToCss, Token};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Stylesheet {

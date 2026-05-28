@@ -71,7 +71,10 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
 
     // Configurar e fazer request
     let config = crate::utils::config::Config {
-        user_agent: cli.user_agent.clone().unwrap_or_else(|| crate::utils::config::Config::default().user_agent),
+        user_agent: cli
+            .user_agent
+            .clone()
+            .unwrap_or_else(|| crate::utils::config::Config::default().user_agent),
         timeout_secs: cli.timeout,
         proxy: cli.proxy.clone(),
     };
@@ -127,7 +130,12 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             } else {
                 println!("🔍 Query '{}': {} resultado(s)", selector, results.len());
                 for (i, r) in results.iter().enumerate() {
-                    println!("  [{}.] <{}> texto: {}", i + 1, r.tag, truncate(&r.text, 80));
+                    println!(
+                        "  [{}.] <{}> texto: {}",
+                        i + 1,
+                        r.tag,
+                        truncate(&r.text, 80)
+                    );
                 }
             }
         }
@@ -138,7 +146,10 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 println!("{}", serde_json::to_string_pretty(&output)?);
             } else {
                 println!("📄 Página: {}", url);
-                println!("📌 Título: {}", output.title.as_deref().unwrap_or("(sem título)"));
+                println!(
+                    "📌 Título: {}",
+                    output.title.as_deref().unwrap_or("(sem título)")
+                );
                 println!("🔗 Links: {}", output.links.len());
                 println!("🖼️ Imagens: {}", output.images.len());
                 println!("📋 Metadados: {}", output.metadata.len());

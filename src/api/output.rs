@@ -1,5 +1,5 @@
-use serde::Serialize;
 use crate::dom::HtmlDocument;
+use serde::Serialize;
 
 #[derive(Serialize)]
 pub struct PageOutput {
