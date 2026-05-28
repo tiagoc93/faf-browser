@@ -7,8 +7,8 @@
   <img alt="Rust" src="https://img.shields.io/badge/Rust-Edition_2024-orange?style=for-the-badge&logo=rust">
 </picture>
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/test-240_passed-green?style=for-the-badge">
-  <img alt="Tests" src="https://img.shields.io/badge/test-240_passed-green?style=for-the-badge">
+  <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/test-246_passed-green?style=for-the-badge">
+  <img alt="Tests" src="https://img.shields.io/badge/test-246_passed-green?style=for-the-badge">
 </picture>
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge">
@@ -58,7 +58,7 @@ Renderizado pelo CSS Engine próprio. Runtime **QuickJS** embarcado para execuç
 | ⏱️ **setTimeout / setInterval** — timers integrados com event loop tokio | ✅ **NOVO** |
 | 📜 **Script tags** — execução automática de `<script>` inline e externo | ✅ **NOVO** |
 | 📦 **Binário único** — ~1MB, zero dependências runtime | ✅ |
-| 🧪 **240 testes** — unitários + integração em sites reais | ✅ |
+| 🧪 **246 testes** — unitários + integração em sites reais | ✅ |
 
 ---
 
@@ -438,7 +438,7 @@ faf-browser/
 - [x] Error handling com stack traces legíveis
 - [x] Execução de `<script>` tags inline + externas
 - [x] CLI: `faf --js "document.title"` e `--js-file`
-- [x] 240 testes, 0 falhas
+- [x] 246 testes, 0 falhas
 
 ### ✅ M4 — Ferramentas de Crawler Profissional (Concluído)
 - [x] 🍪 **Cookies** — `--cookies` e `--cookies-jar` com formato Netscape, sessão persistente
@@ -448,7 +448,7 @@ faf-browser/
 - [x] 🔁 **Retry** — `--retries N` com exponential backoff (500, 429, timeout)
 - [x] 📋 **HTTP Info** — `--show-headers` e `--show-status` na resposta
 - [x] 💾 **Cache** — `--cache .faf-cache` com SHA256 + TTL configurável
-- [x] 🧪 240 testes, 0 falhas
+- [x] 🧪 246 testes, 0 falhas
 
 ### 🔮 M5+ (Futuro)
 - [ ] Click e preenchimento de formulários
@@ -469,7 +469,7 @@ cargo clippy
 # Build release
 cargo build --release
 
-# 240 testes, 0 falhas, clippy limpo
+# 246 testes, 0 falhas, clippy limpo
 ```
 
 ---
