@@ -1,6 +1,6 @@
 # 🎯 FAF Browser — M6: Layout Engine
 
-**Status:** Planejado
+**Status:** ✅ Concluído
 **Previsão:** 4-7 dias
 **Meta:** Screenshot com layout fiel, sem Chromium
 
@@ -148,7 +148,8 @@ Transformar o screenshot do FAF Browser de "prova de conceito" (elementos empilh
 
 ---
 
-### 🔴 T052 — Testes M6 (1 dia)
+### 🟡 T052 — Testes M6 ✅
+**Concluído: 9 testes em tests/m6_test.rs (4 originais + 5 novos). Total: 287 testes passando.**
 
 **Objetivo:** Garantir que o layout engine funciona com testes visuais.
 

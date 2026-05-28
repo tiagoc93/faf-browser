@@ -7,8 +7,8 @@
   <img alt="Rust" src="https://img.shields.io/badge/Rust-Edition_2024-orange?style=for-the-badge&logo=rust">
 </picture>
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/test-266_passed-green?style=for-the-badge">
-  <img alt="Tests" src="https://img.shields.io/badge/test-266_passed-green?style=for-the-badge">
+  <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/test-287_passed-green?style=for-the-badge">
+  <img alt="Tests" src="https://img.shields.io/badge/test-287_passed-green?style=for-the-badge">
 </picture>
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge">
@@ -43,6 +43,12 @@ Renderizado pelo CSS Engine próprio. Runtime **QuickJS** embarcado para execuç
 | 📊 **Computed Styles** — estilos reais da página (parseia `<style>` e `<link>` automagicamente) | ✅ |
 | 📸 **Screenshot** — render PNG com texto real e CSS via `ab_glyph` + `tiny-skia` | ✅ **NOVO** |
 | 📝 **Texto Real** — renderização com ab_glyph (100% Rust, sem freetype) | ✅ **NOVO** |
+| 🌳 **Layout Tree** — DOM → árvore visual block/inline com herança de estilo | ✅ **M6** |
+| 📐 **Layout Engine** — block flow com margin collapsing, inline flow com text wrap | ✅ **M6** |
+| 🎨 **Backgrounds** — cores de fundo nos elementos + body viewport | ✅ **M6** |
+| 🧱 **Bordas CSS** — border-width/color/style com shorthand | ✅ **M6** |
+| 🖼️ **Imagens `<img>`** — decode JPEG/PNG/WebP + fallback placeholder | ✅ **M6** |
+| 📌 **Positioning** — relative + z-index ordering | ✅ **M6** |
 | 🔎 **Filtros** — `--filter "text~=Python"`, `--filter "href^=https"`, regex | ✅ |
 | 🎯 **Extração seletiva** — `--get "text, href"` — só os campos que importam | ✅ |
 | 🕷️ **Crawler** — `faf follow` — siga links, visite páginas, extraia dados | ✅ |
@@ -481,41 +487,53 @@ O screenshot do M5 estava gerando **tela em branco** devido a dois bugs:
 
 ```
 📦 61 tasks · ✅ 61 concluídas · MVP Completo! 🎉
-🧪 266 testes · 0 falhas · clippy limpo · build 0 warnings
+🧪 287 testes · 0 falhas · clippy limpo · build 0 warnings
 ```
 
-### 📋 M6 — Layout Engine (Planejado)
+|   ✅ Concluído 8/8 tasks  •  287 testes  •  clippy limpo  •  ~300KB binário  |
+|:--------------------------------------------------------------------------:|
 
-O FAF Browser vai ganhar um motor de layout PRÓPRIO para renderização fiel de páginas — tudo em Rust, sem Chromium, sem Playwright.
+### ✅ M6 — Layout Engine (Concluído 🎉)
 
-#### Objetivo
+O FAF Browser agora tem um motor de layout PRÓPRIO com árvore visual, fluxo block/inline, quebra de texto, margin collapsing, cores de fundo, bordas, imagens e posicionamento.
 
-Transformar o screenshot de "prova de conceito" em uma representação visual fiel da página, com posicionamento correto dos elementos, cores, bordas, imagens e fluxo de texto.
+#### Antes e Depois
 
-| Task | Feature | Prioridade |
-|------|---------|:----------:|
-| **T045** | **Layout Tree** — árvore visual a partir do DOM (block vs inline) | 🔴 |
-| **T046** | **Inline Flow** — texto em linha com quebra automática (text-wrap) | 🔴 |
-| **T047** | **Block Flow** — empilhamento vertical com margin collapsing | 🔴 |
-| **T048** | **Background rendering** — cores de fundo reais + imagens de background | 🔴 |
-| **T049** | **Bordas CSS** — border-width, border-style, border-color, cantos | 🟡 |
-| **T050** | **Imagens `<img>`** — decode e render no screenshot | 🟡 |
-| **T051** | **Positioning** — relative, absolute, z-index | 🟡 |
-| **T052** | **Testes M6** — 12+ testes de integração visual | 🔴 |
+| Aspecto | M5 (lista plana) | M6 (árvore visual) |
+|---------|:----------------:|:------------------:|
+| Layout | Lista plana, x=0 | Árvore block/inline |
+| Text wrap | ❌ Tudo na mesma linha | ✅ Quebra automática |
+| Backgrounds | Parcial | ✅ Herdado do CSS |
+| Bordas | ❌ | ✅ solid |
+| Imagens | ❌ | ✅ decode + render |
+| Positioning | ❌ | ✅ relative + z-index |
 
-```bash
-📦 8 tasks · 📅 Previsão: 4-7 dias
-🎯 Meta: Screenshot com layout fiel, sem Chromium
-```
+| Task | Feature | Status |
+|------|---------|:------:|
+| **T045** | **Layout Tree** — DOM → árvore visual block/inline via scraper | ✅ |
+| **T046** | **Inline Flow** — texto em linha com quebra automática (text-wrap) | ✅ |
+| **T047** | **Block Flow** — empilhamento vertical com margin collapsing | ✅ |
+| **T048** | **Background rendering** — cores de fundo reais | ✅ |
+| **T049** | **Bordas CSS** — border-width, border-color, solid | ✅ |
+| **T050** | **Imagens `<img>`** — decode (image crate) + fallback | ✅ |
+| **T051** | **Positioning** — relative + z-index | ✅ |
+| **T052** | **Testes M6** — 9 testes de integração visual | ✅ |
 
-#### Stack M6
+#### Commits M6
 
-| Componente | Crate | Função |
-|-----------|-------|--------|
-| Renderização | `tiny-skia` | Canvas 2D, formas, blending |
-| Texto | `ab_glyph` | Rasterização de fontes (puro Rust) |
-| Layout | `std` + `tiny-skia` | Algoritmos de posicionamento próprios |
-| Imagens | `image` (jpeg/png/webp) | Decode para render |
+| Commit | O que fez |
+|--------|-----------|
+| `71db35f` | T045 — layout tree (VisualNode, build_layout_tree) |
+| `d4b4193` | T045-T048 — layout engine + screenshot árvore + 711 linhas |
+| `908c616` | T049-T050 — bordas CSS + imagens + 585 linhas |
+| `1f15905` | T051-T052 — relative positioning + z-index + testes |
+
+#### Stack M6 (adicionado)
+
+| Crate | Versão | Função |
+|-------|--------|--------|
+| `image` | 0.25 | Decodificação JPEG/PNG/WebP |
+| — | — | Layout engine 100% std (algoritmos próprios) |
 
 ---
 
