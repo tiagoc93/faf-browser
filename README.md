@@ -537,6 +537,50 @@ O FAF Browser agora tem um motor de layout PRÓPRIO com árvore visual, fluxo bl
 
 ---
 
+### 📋 M7 — Playwright Parity + Polish (Planejado)
+
+Fechar as lacunas visuais e de posicionamento para que o screenshot do FAF seja equivalente ao Playwright — mas mais rápido.
+
+| Task | Feature | Prioridade |
+|------|---------|:----------:|
+| **T053** | **Playwright Comparison Framework** — diff visual + métricas SSIM | 🔴 |
+| **T054** | **position: absolute + fixed** — containing block, viewport | 🔴 |
+| **T055** | **Text Rendering Accuracy** — ab_glyph real, line-height, text-align, font-weight | 🟡 |
+| **T056** | **Overflow Handling** — hidden com clip, visible | 🟡 |
+| **T057** | **Comparison & Gap Fixing** — rodar comparação, corrigir gaps | 🟡 |
+| **T058** | **Performance Benchmark** — FAF vs Playwright, otimizações | 🟡 |
+| **T059** | **Testes M7** — 8+ testes de integração | 🔴 |
+
+```bash
+📦 7 tasks · 📅 Previsão: 5-8 dias
+🎯 Meta: Screenshot FAF ≈ Playwright, 2×+ rápido
+```
+
+#### Stack M7 (adicionado)
+
+| Crate | Versão | Função |
+|-------|--------|--------|
+| — | — | Playwright (Python) para comparação |
+| `image` | 0.25 | Já incluso, usado para diff pixel |
+| — | — | Benchmark tool (bash + hyperfine) |
+
+#### Como começar o M7
+
+```bash
+# 1. Rodar a tool de comparação
+python3 tools/compare-playwright/compare.py --url https://example.com
+
+# 2. Ver o diff gerado em /tmp/faf-compare/
+# 3. Implementar position:absolute (T054)
+# 4. Implementar text rendering (T055)
+# 5. Implementar overflow (T056)
+# 6. Re-rodar comparação, iterar (T057)
+# 7. Benchmark (T058)
+# 8. Testes (T059)
+```
+
+Veja `TASKS_M7.md` para specs detalhadas.
+
 ## 🧪 Testes
 
 ```bash
