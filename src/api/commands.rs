@@ -12,6 +12,18 @@ pub struct Cli {
     #[arg(short = 's', long = "js")]
     pub js_script: Option<String>,
 
+    /// Caminho para arquivo JavaScript a ser executado
+    #[arg(long = "js-file")]
+    pub js_file: Option<String>,
+
+    /// Desabilita execução automática de scripts da página
+    #[arg(long = "no-scripts")]
+    pub no_scripts: bool,
+
+    /// Timeout em segundos para execução de JavaScript
+    #[arg(long = "js-timeout", default_value = "5", global = true)]
+    pub js_timeout: u64,
+
     /// CSS inline ou caminho para arquivo CSS
     #[arg(long = "css", visible_alias = "style", global = true)]
     pub css: Option<String>,
@@ -134,6 +146,47 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
     } else {
         "text".to_string()
     };
+
+    // Se --js ou --js-file foi passado, executar JS
+    let user_js = cli.js_script.as_ref().or(cli.js_file.as_ref());
+    if let Some(js_input) = user_js {
+        let js_code = if cli.js_file.is_some()
+            || !(js_input.contains('(') || js_input.contains(';') || js_input.contains('\n'))
+        {
+            // Arquivo JS (--js-file sempre é arquivo; --js sem caracteres de código tenta arquivo)
+            std::fs::read_to_string(js_input)
+                .map_err(|e| anyhow::anyhow!("Falha ao ler arquivo JS '{}': {}", js_input, e))?
+        } else {
+            // Código JS inline
+            js_input.clone()
+        };
+
+        let mut rt = crate::js::JsRuntime::with_client(client.clone())?;
+        rt.set_dom(&doc)?;
+        rt.init_timers()?;
+        rt.init_fetch()?;
+
+        // Executar scripts da página (se não --no-scripts)
+        if !cli.no_scripts {
+            let base_url = url::Url::parse(&url)?;
+            rt.execute_page_scripts(&doc, &base_url, &client)?;
+        }
+
+        // Executar JS do usuário
+        let result = rt.eval_with_timeout(&js_code, cli.js_timeout)?;
+
+        // Output
+        match format.as_str() {
+            "json" => {
+                let json_result = rt
+                    .eval_json_with_timeout(&js_code, cli.js_timeout)
+                    .unwrap_or(serde_json::json!({"result": result}));
+                println!("{}", serde_json::to_string_pretty(&json_result)?);
+            }
+            _ => println!("{}", result),
+        }
+        return Ok(());
+    }
 
     // Executar comando específico ou extração completa
     match &cli.command {
@@ -298,7 +351,12 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             let base_url = Url::parse(&url)?;
             let mut hrefs: Vec<String> = Vec::new();
             for r in &link_results {
-                if let Some(href) = r.attributes.iter().find(|(k, _)| k == "href").map(|(_, v)| v) {
+                if let Some(href) = r
+                    .attributes
+                    .iter()
+                    .find(|(k, _)| k == "href")
+                    .map(|(_, v)| v)
+                {
                     match base_url.join(href) {
                         Ok(abs_url) => {
                             if args.same_domain && abs_url.host_str() != base_url.host_str() {

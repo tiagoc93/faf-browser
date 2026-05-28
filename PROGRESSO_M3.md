@@ -7,7 +7,7 @@
 | 1 | T021 (runtime básico) | ✅ Concluído | c64d56d |
 | 2 | T022 (DOM bridge) | ✅ Concluído | 22ed5a9 |
 | 3 | T023 + T025 + T026 + T027 (timers, timeout, console, erros) | ✅ Concluído | 2ebe948 |
-| 4 | T024 (fetch bridge) | ⏳ Pendente | — |
+| 4 | T024 (fetch bridge) | ✅ Concluído | — |
 | 5 | T028 + T029 + T030 (scripts, CLI, testes) | ⏳ Pendente | — |
 
 ## Tasks
@@ -17,7 +17,7 @@
 | T021 | Embed rquickjs runtime básico | ✅ Feito |
 | T022 | Bridge DOM ↔ JS | ✅ Feito |
 | T023 | setTimeout / setInterval com tokio | ✅ Feito |
-| T024 | Fetch API bridge | ⏳ Pendente |
+| T024 | Fetch API bridge | ✅ Feito |
 | T025 | Timeout de execução JS (5s default) | ✅ Feito |
 | T026 | Console.log → Rust logger | ✅ Feito |
 | T027 | Error handling com stack traces | ✅ Feito |

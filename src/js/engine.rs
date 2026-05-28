@@ -5,6 +5,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
+use crate::dom::HtmlDocument;
+use crate::http::client::HttpClient;
+
 pub(crate) static TIMER_RT: LazyLock<tokio::runtime::Runtime> =
     LazyLock::new(|| tokio::runtime::Runtime::new().expect("failed to create timer runtime"));
 
@@ -19,7 +22,11 @@ impl JsRuntime {
     pub fn new() -> Result<Self> {
         let runtime = Runtime::new()?;
         let context = Context::full(&runtime).context("failed to create full rquickjs context")?;
-        let mut this = Self { runtime, context, client: None };
+        let mut this = Self {
+            runtime,
+            context,
+            client: None,
+        };
         this.init_console()?;
         Ok(this)
     }
@@ -32,8 +39,8 @@ impl JsRuntime {
 
     pub fn init_console(&mut self) -> Result<()> {
         self.context.with(|ctx| {
-            let console = rquickjs::Object::new(ctx.clone())
-                .context("failed to create console object")?;
+            let console =
+                rquickjs::Object::new(ctx.clone()).context("failed to create console object")?;
 
             let log = rquickjs::Function::new(
                 ctx.clone(),
@@ -107,9 +114,15 @@ impl JsRuntime {
             )
             .context("failed to create console.error")?;
 
-            console.set("log", log).context("failed to set console.log")?;
-            console.set("warn", warn).context("failed to set console.warn")?;
-            console.set("error", error).context("failed to set console.error")?;
+            console
+                .set("log", log)
+                .context("failed to set console.log")?;
+            console
+                .set("warn", warn)
+                .context("failed to set console.warn")?;
+            console
+                .set("error", error)
+                .context("failed to set console.error")?;
             ctx.globals()
                 .set("console", console)
                 .context("failed to set global console")?;
@@ -315,7 +328,11 @@ impl JsRuntime {
         }
     }
 
-    pub fn eval_json_with_timeout(&self, code: &str, timeout_secs: u64) -> Result<serde_json::Value> {
+    pub fn eval_json_with_timeout(
+        &self,
+        code: &str,
+        timeout_secs: u64,
+    ) -> Result<serde_json::Value> {
         let code = code.to_string();
         let context = self.context.clone();
         let (tx, rx) = std::sync::mpsc::channel();
@@ -373,11 +390,75 @@ impl JsRuntime {
         )?;
         super::fetch_bridge::init_fetch(&self.context, client)
     }
+
+    pub fn client(&self) -> Option<&crate::http::client::HttpClient> {
+        self.client.as_ref()
+    }
+
+    /// Executa todos os scripts `<script>` encontrados no documento HTML.
+    /// Scripts inline são executados diretamente; scripts externos são baixados
+    /// e depois executados. Erros são logados como warning e não interrompem
+    /// o processamento dos demais scripts.
+    pub fn execute_page_scripts(
+        &mut self,
+        doc: &HtmlDocument,
+        base_url: &url::Url,
+        client: &HttpClient,
+    ) -> Result<()> {
+        let selector = scraper::Selector::parse("script")
+            .map_err(|e| anyhow::anyhow!("Falha ao parsear seletor de scripts: {:?}", e))?;
+
+        for el in doc.scraper_html().select(&selector) {
+            // Ignorar scripts com type="module" ou type="application/ld+json"
+            if let Some(ty) = el.value().attr("type") {
+                let ty = ty.trim().to_lowercase();
+                if ty == "module" || ty == "application/ld+json" {
+                    continue;
+                }
+            }
+
+            if let Some(src) = el.value().attr("src") {
+                // Script externo
+                let resolved_url = match base_url.join(src) {
+                    Ok(u) => u.to_string(),
+                    Err(e) => {
+                        log::warn!("URL inválida para script externo ({}): {}", src, e);
+                        continue;
+                    }
+                };
+
+                let script_body = match TIMER_RT.block_on(async { client.get(&resolved_url).await })
+                {
+                    Ok(body) => body,
+                    Err(e) => {
+                        log::warn!("Falha ao baixar script externo ({}): {}", resolved_url, e);
+                        continue;
+                    }
+                };
+
+                if let Err(e) = self.eval_with_timeout(&script_body, 5) {
+                    log::warn!("Erro ao executar script externo ({}): {}", resolved_url, e);
+                }
+            } else {
+                // Script inline
+                let code: String = el.text().collect();
+                let code = code.trim().to_string();
+                if code.is_empty() {
+                    continue;
+                }
+                if let Err(e) = self.eval_with_timeout(&code, 5) {
+                    log::warn!("Erro ao executar script inline: {}", e);
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 fn format_js_error<'js>(ctx: &rquickjs::Ctx<'js>, err: rquickjs::Error) -> String {
-    use rquickjs::{Coerced, Exception};
     use rquickjs::atom::PredefinedAtom;
+    use rquickjs::{Coerced, Exception};
 
     match err {
         rquickjs::Error::Exception => {
@@ -582,7 +663,8 @@ mod tests {
     async fn test_set_timeout() {
         let mut rt = JsRuntime::new().unwrap();
         rt.init_timers().unwrap();
-        rt.eval("setTimeout(() => { globalThis.timeoutResult = 42; }, 50)").unwrap();
+        rt.eval("setTimeout(() => { globalThis.timeoutResult = 42; }, 50)")
+            .unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
         let result = rt.eval("globalThis.timeoutResult").unwrap();
         assert_eq!(result, "42");
@@ -592,7 +674,9 @@ mod tests {
     async fn test_clear_timeout() {
         let mut rt = JsRuntime::new().unwrap();
         rt.init_timers().unwrap();
-        let id = rt.eval("setTimeout(() => { globalThis.clearedResult = 'bad'; }, 50)").unwrap();
+        let id = rt
+            .eval("setTimeout(() => { globalThis.clearedResult = 'bad'; }, 50)")
+            .unwrap();
         rt.eval(&format!("clearTimeout({})", id)).unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
         let result = rt.eval("typeof globalThis.clearedResult").unwrap();
@@ -603,12 +687,24 @@ mod tests {
     async fn test_set_interval_and_clear() {
         let mut rt = JsRuntime::new().unwrap();
         rt.init_timers().unwrap();
-        rt.eval("globalThis.intervalCount = 0; setInterval(() => { globalThis.intervalCount++; }, 30)").unwrap();
+        rt.eval(
+            "globalThis.intervalCount = 0; setInterval(() => { globalThis.intervalCount++; }, 30)",
+        )
+        .unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-        let count: i32 = rt.eval("globalThis.intervalCount").unwrap().parse().unwrap();
-        assert!(count >= 3, "expected at least 3 interval ticks, got {}", count);
+        let count: i32 = rt
+            .eval("globalThis.intervalCount")
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(
+            count >= 3,
+            "expected at least 3 interval ticks, got {}",
+            count
+        );
 
-        rt.eval("clearInterval(globalThis.lastIntervalId || 1)").unwrap();
+        rt.eval("clearInterval(globalThis.lastIntervalId || 1)")
+            .unwrap();
         // Should not panic; interval may keep running if ID tracking is off, but we can at least verify eval works
     }
 
@@ -616,7 +712,8 @@ mod tests {
     async fn test_set_timeout_string_code() {
         let mut rt = JsRuntime::new().unwrap();
         rt.init_timers().unwrap();
-        rt.eval("setTimeout('globalThis.stringResult = \"hello\"', 50)").unwrap();
+        rt.eval("setTimeout('globalThis.stringResult = \"hello\"', 50)")
+            .unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
         let result = rt.eval("globalThis.stringResult").unwrap();
         assert_eq!(result, "hello");
@@ -645,7 +742,11 @@ mod tests {
         let result = rt.eval("fetch('http://127.0.0.1:1/')");
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("error") || err.contains("refused") || err.contains("Connection"), "unexpected error: {}", err);
+        assert!(
+            err.contains("error") || err.contains("refused") || err.contains("Connection"),
+            "unexpected error: {}",
+            err
+        );
     }
 
     #[test]
@@ -702,11 +803,12 @@ mod tests {
         let mut rt = JsRuntime::with_client(client).unwrap();
         rt.init_fetch().unwrap();
 
-        let result = rt.eval(&format!(
-            r#"var r = fetch('http://127.0.0.1:{}/test'); JSON.stringify(r.json());"#,
-            port
-        ))
-        .unwrap();
+        let result = rt
+            .eval(&format!(
+                r#"var r = fetch('http://127.0.0.1:{}/test'); JSON.stringify(r.json());"#,
+                port
+            ))
+            .unwrap();
         assert_eq!(result, r#"{"hello":123}"#);
     }
 
@@ -732,11 +834,12 @@ mod tests {
         let mut rt = JsRuntime::with_client(client).unwrap();
         rt.init_fetch().unwrap();
 
-        let result = rt.eval(&format!(
-            r#"var r = fetch('http://127.0.0.1:{}/test'); JSON.stringify(r.headers);"#,
-            port
-        ))
-        .unwrap();
+        let result = rt
+            .eval(&format!(
+                r#"var r = fetch('http://127.0.0.1:{}/test'); JSON.stringify(r.headers);"#,
+                port
+            ))
+            .unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
         assert_eq!(parsed["content-type"], "application/json");
     }
@@ -752,5 +855,42 @@ mod tests {
         let result = rt.eval("typeof fetch('http://127.0.0.1:1/', {method: 'POST', body: 'test'})");
         // Deve lançar erro de conexão recusada, não erro de sintaxe
         assert!(result.is_err());
+    }
+    #[test]
+    fn test_execute_page_scripts_inline() {
+        let html =
+            r#"<html><head><script>document.title = 'JS OK'</script></head><body></body></html>"#;
+        let doc = crate::dom::HtmlDocument::parse(html);
+        let mut rt = JsRuntime::new().unwrap();
+        rt.set_dom(&doc).unwrap();
+
+        let config = crate::utils::config::Config::default();
+        let client = crate::http::client::HttpClient::new(config).unwrap();
+        let base_url = url::Url::parse("https://example.com").unwrap();
+
+        rt.execute_page_scripts(&doc, &base_url, &client).unwrap();
+
+        let title = rt.eval("document.title").unwrap();
+        assert_eq!(title, "JS OK");
+    }
+
+    #[test]
+    fn test_execute_page_scripts_error_continues() {
+        let html = r#"<html><head>
+            <script>undefined.x</script>
+            <script>document.title = 'RECOVERY'</script>
+        </head><body></body></html>"#;
+        let doc = crate::dom::HtmlDocument::parse(html);
+        let mut rt = JsRuntime::new().unwrap();
+        rt.set_dom(&doc).unwrap();
+
+        let config = crate::utils::config::Config::default();
+        let client = crate::http::client::HttpClient::new(config).unwrap();
+        let base_url = url::Url::parse("https://example.com").unwrap();
+
+        rt.execute_page_scripts(&doc, &base_url, &client).unwrap();
+
+        let title = rt.eval("document.title").unwrap();
+        assert_eq!(title, "RECOVERY");
     }
 }

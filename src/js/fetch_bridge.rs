@@ -12,8 +12,8 @@ pub fn init_fetch(ctx: &Context, client: &crate::http::client::HttpClient) -> Re
         let _fetch = Function::new(
             ctx.clone(),
             move |url: String, options_json: Option<String>| -> String {
-                let options = options_json
-                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
+                let options =
+                    options_json.and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
 
                 let method = options
                     .as_ref()
@@ -25,9 +25,11 @@ pub fn init_fetch(ctx: &Context, client: &crate::http::client::HttpClient) -> Re
                     .unwrap_or_else(|| "GET".to_string());
 
                 let headers = options.as_ref().and_then(|v| v.get("headers").cloned());
-                let body = options
-                    .as_ref()
-                    .and_then(|v| v.get("body").and_then(|b| b.as_str()).map(|s| s.to_string()));
+                let body = options.as_ref().and_then(|v| {
+                    v.get("body")
+                        .and_then(|b| b.as_str())
+                        .map(|s| s.to_string())
+                });
 
                 let req_method = match method.as_str() {
                     "GET" => reqwest::Method::GET,
@@ -40,27 +42,23 @@ pub fn init_fetch(ctx: &Context, client: &crate::http::client::HttpClient) -> Re
                     _ => reqwest::Method::GET,
                 };
 
-                let response =
-                    crate::js::engine::TIMER_RT.block_on(async {
-                        let mut req = inner_client.request(req_method, &url);
+                let response = crate::js::engine::TIMER_RT.block_on(async {
+                    let mut req = inner_client.request(req_method, &url);
 
-                        if let Some(headers_obj) = headers
-                            .as_ref()
-                            .and_then(|v| v.as_object())
-                        {
-                                for (key, value) in headers_obj {
-                                    if let Some(val_str) = value.as_str() {
-                                        req = req.header(key, val_str);
-                                    }
-                                }
+                    if let Some(headers_obj) = headers.as_ref().and_then(|v| v.as_object()) {
+                        for (key, value) in headers_obj {
+                            if let Some(val_str) = value.as_str() {
+                                req = req.header(key, val_str);
                             }
-
-                        if let Some(body_str) = body {
-                            req = req.body(body_str);
                         }
+                    }
 
-                        req.send().await
-                    });
+                    if let Some(body_str) = body {
+                        req = req.body(body_str);
+                    }
+
+                    req.send().await
+                });
 
                 match response {
                     Ok(resp) => {
@@ -72,7 +70,8 @@ pub fn init_fetch(ctx: &Context, client: &crate::http::client::HttpClient) -> Re
                             }
                         }
 
-                        let body = crate::js::engine::TIMER_RT.block_on(async { resp.text().await });
+                        let body =
+                            crate::js::engine::TIMER_RT.block_on(async { resp.text().await });
 
                         match body {
                             Ok(body_text) => json!({
@@ -105,7 +104,8 @@ pub fn init_fetch(ctx: &Context, client: &crate::http::client::HttpClient) -> Re
 
         // Injeta o wrapper JS que expõe fetch como função síncrona
         // (sem Promise — mais prático para navegador headless)
-        ctx.eval::<(), _>(r#"
+        ctx.eval::<(), _>(
+            r#"
             (function() {
                 globalThis.fetch = function(url, options) {
                     var optionsStr = options ? JSON.stringify(options) : null;
@@ -125,7 +125,8 @@ pub fn init_fetch(ctx: &Context, client: &crate::http::client::HttpClient) -> Re
                     };
                 };
             })();
-        "#)
+        "#,
+        )
         .context("failed to inject fetch wrapper")?;
 
         Ok(())
