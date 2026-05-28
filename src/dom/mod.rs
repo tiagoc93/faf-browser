@@ -149,6 +149,11 @@ impl HtmlDocument {
     pub fn html(&self) -> String {
         self.inner.html()
     }
+
+    /// Acesso ao `scraper::Html` subjacente (usado pelo motor CSS).
+    pub fn scraper_html(&self) -> &scraper::Html {
+        &self.inner
+    }
 }
 
 #[cfg(test)]
