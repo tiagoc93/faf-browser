@@ -7,8 +7,8 @@
   <img alt="Rust" src="https://img.shields.io/badge/Rust-Edition_2024-orange?style=for-the-badge&logo=rust">
 </picture>
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/test-246_passed-green?style=for-the-badge">
-  <img alt="Tests" src="https://img.shields.io/badge/test-246_passed-green?style=for-the-badge">
+  <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/test-266_passed-green?style=for-the-badge">
+  <img alt="Tests" src="https://img.shields.io/badge/test-266_passed-green?style=for-the-badge">
 </picture>
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge">
@@ -58,7 +58,7 @@ Renderizado pelo CSS Engine próprio. Runtime **QuickJS** embarcado para execuç
 | ⏱️ **setTimeout / setInterval** — timers integrados com event loop tokio | ✅ **NOVO** |
 | 📜 **Script tags** — execução automática de `<script>` inline e externo | ✅ **NOVO** |
 | 📦 **Binário único** — ~1MB, zero dependências runtime | ✅ |
-| 🧪 **246 testes** — unitários + integração em sites reais | ✅ |
+| 🧪 **266 testes** — unitários + integração em sites reais | ✅ |
 
 ---
 
@@ -438,7 +438,7 @@ faf-browser/
 - [x] Error handling com stack traces legíveis
 - [x] Execução de `<script>` tags inline + externas
 - [x] CLI: `faf --js "document.title"` e `--js-file`
-- [x] 246 testes, 0 falhas
+- [x] 266 testes, 0 falhas
 
 ### ✅ M4 — Ferramentas de Crawler Profissional (Concluído)
 - [x] 🍪 **Cookies** — `--cookies` e `--cookies-jar` com formato Netscape, sessão persistente
@@ -448,7 +448,7 @@ faf-browser/
 - [x] 🔁 **Retry** — `--retries N` com exponential backoff (500, 429, timeout)
 - [x] 📋 **HTTP Info** — `--show-headers` e `--show-status` na resposta
 - [x] 💾 **Cache** — `--cache .faf-cache` com SHA256 + TTL configurável
-- [x] 🧪 246 testes, 0 falhas
+- [x] 🧪 266 testes, 0 falhas
 
 ### 📋 M5 — Interação com Páginas (Planejado)
 
@@ -464,8 +464,8 @@ O FAF vai deixar de ser só um "leitor" e virar um navegador que interage:
 | **T044** 🟡 | **Testes M5** — 9 testes de integração | — |
 
 ```
-📦 55 tasks · ✅ 39 concluídas · 📋 6 planejadas (M5)
-🧪 246 testes · 0 falhas · clippy limpo
+📦 61 tasks · ✅ 49 concluídas · MVP Completo! 🎉
+🧪 266 testes · 0 falhas · clippy limpo
 ```
 
 ---
@@ -482,7 +482,7 @@ cargo clippy
 # Build release
 cargo build --release
 
-# 246 testes, 0 falhas, clippy limpo
+# 266 testes, 0 falhas, clippy limpo
 ```
 
 ---
