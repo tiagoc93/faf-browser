@@ -301,27 +301,23 @@ echo "document.title" | faf --url https://books.toscrape.com/ --stdin
 
 ---
 
-## 📋 M4.5 — Refinamentos Pós-M4 (3 tasks · Planejado)
+## 📋 M4.5 — Refinamentos Pós-M4 (3 tasks · 2 concluídas · 0 pendentes)
 
-### F001 — Fix: follow --extract vazando DOM entre páginas (🔴 crítica)
-**Arquivos:** `src/api/commands.rs` (follow handler)
+### F001 — Investigado: follow --extract NÃO vaza DOM entre páginas (🔴 crítica → ✅ Resolvido)
+**Arquivos:** `tests/m4_test.rs` (teste adicionado)
 
-**Problema:** Quando `faf follow` usa `--extract`, os elementos extraídos de páginas anteriores estão vazando para o resultado da página atual. Cada visita deveria extrair APENAS elementos do DOM da página visitada, sem contaminação de páginas anteriores.
+**Diagnóstico:** O código do FAF está correto. Teste local com servidor de 3 páginas distintas confirmou que cada `follow_page()` cria DOM fresco e extrai APENAS elementos da página atual.
 
-**Evidência:** No teste real com `--extract "h3, .price_color" --max 5`, cada livro retornou de 10 a 14 elementos `extracted` quando deveria retornar apenas 2 (1 preço + 1 estoque).
+**Causa real:** As páginas individuais de books.toscrape.com TÊM sidebars com `h3` e `.price_color` de livros relacionados. O que parecia "vazamento de DOM entre páginas" era na verdade o conteúdo das próprias páginas.
 
-**Causa provável:** O buffer de `extracted` não está sendo resetado entre iterações do loop de follow. A lista de resultados acumula ao invés de limpar a cada página.
+**Evidência:** Teste local `test_follow_extract_no_leak` passou com cada página retornando exatamente 1 h1 distinto — sem leak.
 
-**Implementação:**
-1. Localizar o loop de follow em `commands.rs` (~linha 530-560)
-2. Garantir que o vetor/lista de resultados extraídos seja reinicializado a cada iteração de página
-3. Verificar se o `QueryResult` ou estrutura de extração está sendo corretamente clonada/redefinida
-4. Adicionar teste: servidor com 2 páginas diferentes → follow extrai só elementos da página atual
-
-**Critério:**
-- `faf follow "a" --extract "h1" --max 2 --url <url>` → cada resultado tem só 1 h1
-- Nenhum elemento de página anterior aparece no resultado da página atual
-- `cargo test`, `cargo clippy`
+**Recomendação:** Para filtrar resultados indesejados em sites com sidebars, usar `--filter` (agora com `!~=` graças ao F003):
+```bash
+faf follow ".product_pod h3 a" --extract "h3, .price_color" \
+  --filter "text!~=A Light" \
+  --url https://books.toscrape.com/
+```
 
 ---
 
@@ -393,9 +389,9 @@ echo "document.title" | faf --url https://books.toscrape.com/ --stdin
 | M2.5 — Polimento CLI | 8 | ✅ Concluído |
 | M3 — JavaScript Engine | 10 | ✅ Concluído |
 | **M4 — Sessão, Interação & Pipeline** | **8** | **✅ Concluído** |
-| **M4.5 — Refinamentos Pós-M4** | **3** | **📋 Planejado** |
+| **M4.5 — Refinamentos Pós-M4** | **3** | **✅ Concluído** |
 | M5 — Extração Avançada | 6 | 📋 Planejado |
-| **Total** | **55** | **36 concluídas · 12 planejadas** |
+| **Total** | **55** | **39 concluídas · 9 planejadas** |
 
 ## ✅ Critério de conclusão do MVP
 
