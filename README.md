@@ -7,8 +7,8 @@
   <img alt="Rust" src="https://img.shields.io/badge/Rust-Edition_2024-orange?style=for-the-badge&logo=rust">
 </picture>
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/test-215_passed-green?style=for-the-badge">
-  <img alt="Tests" src="https://img.shields.io/badge/test-215_passed-green?style=for-the-badge">
+  <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/test-240_passed-green?style=for-the-badge">
+  <img alt="Tests" src="https://img.shields.io/badge/test-240_passed-green?style=for-the-badge">
 </picture>
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge">
@@ -47,11 +47,18 @@ Renderizado pelo CSS Engine próprio. Runtime **QuickJS** embarcado para execuç
 | 📋 **Múltiplos formatos** — texto, JSON, JSONL, CSV | ✅ |
 | 🔌 **Proxy** — HTTP e SOCKS5 | ✅ |
 | 🟨 **JavaScript Engine** — QuickJS `rquickjs` com DOM bridge, timers, fetch | ✅ **NOVO** |
+| 🍪 **Cookies** — `--cookies` e `--cookies-jar` — sessão persistente Netscape | ✅ **NOVO** |
+| ⏳ **Wait** — `faf wait \".produto\"` — aguarda elemento carregar no DOM | ✅ **NOVO** |
+| 💻 **REPL** — `faf repl --url <url>` e `--stdin` para pipes | ✅ **NOVO** |
+| 🐌 **Delay** — `--delay` e `--random-delay` entre requests | ✅ **NOVO** |
+| 🔁 **Retry** — `--retries N` com exponential backoff + 429 handling | ✅ **NOVO** |
+| 📋 **HTTP Info** — `--show-headers` e `--show-status` na resposta | ✅ **NOVO** |
+| 💾 **Cache** — `--cache .cache` com TTL configurável e SHA256 | ✅ **NOVO** |
 | 🔗 **Fetch API bridge** — `fetch()` no JS chama o reqwest do Rust | ✅ **NOVO** |
 | ⏱️ **setTimeout / setInterval** — timers integrados com event loop tokio | ✅ **NOVO** |
 | 📜 **Script tags** — execução automática de `<script>` inline e externo | ✅ **NOVO** |
 | 📦 **Binário único** — ~1MB, zero dependências runtime | ✅ |
-| 🧪 **215 testes** — unitários + integração em sites reais | ✅ |
+| 🧪 **240 testes** — unitários + integração em sites reais | ✅ |
 
 ---
 
@@ -77,6 +84,40 @@ sudo cp ./target/release/faf-browser /usr/local/bin/faf
 ---
 
 ## 📖 Uso
+
+### 🔥 Novidades M4 — Crawler Profissional
+
+```bash
+# Esperar elemento carregar (útil para SPAs)
+faf wait ".produto" --url https://loja.com --timeout 10
+
+# REPL interativo
+faf repl --url https://books.toscrape.com/
+> document.title
+> document.querySelectorAll(".price_color").length
+
+# Pipe de JS via --stdin
+echo 'document.querySelector("h1").textContent' | faf --stdin --url https://books.toscrape.com/
+
+# Crawler com delay entre requests
+faf https://books.toscrape.com/ follow ".product_pod h3 a" \
+  --extract "h3, .price_color" \
+  --max 10 --delay 1000 --random-delay 500 1500
+
+# Retry automático em falhas
+faf https://site-instavel.com --retries 3 --retry-delay 2000 --show-status
+
+# Cache em disco
+faf https://site.com --cache .faf-cache --show-status
+# → Primeira: cache MISS, Segunda: cache HIT
+
+# Headers e status na resposta
+faf https://httpbin.org/get --show-headers --show-status --json
+
+# Sessão com cookies persistente
+faf https://site.com/login --cookies session.txt --cookies-jar session.txt
+faf https://site.com/dados --cookies session.txt --show-status
+```
 
 ### Execução de JavaScript 🔥
 
@@ -307,11 +348,13 @@ faf-browser/
 │   │   └── fetch_bridge.rs  # Ponte fetch ↔ reqwest (HTTP do JS)
 │   └── utils/
 │       ├── mod.rs
-│       ├── config.rs        # Configurações
+│       ├── config.rs        # Configurações (retry, cache, cookies, etc)
 │       └── error.rs         # Tipos de erro
 ├── tests/
+│   ├── fixtures/            # Dados de teste
 │   ├── m2_test.rs           # Testes de integração M2 (CSS)
-│   └── m3_test.rs           # Testes de integração M3 (JS)
+│   ├── m3_test.rs           # Testes de integração M3 (JS)
+│   └── m4_test.rs           # Testes de integração M4 (cookies, wait, cache, retry, etc)
 ├── Cargo.toml
 └── README.md
 ```
@@ -352,6 +395,11 @@ faf-browser/
 | **Screenshots** | ❌ | ✅ | ❌ (planejado) |
 | **RAM (página média)** | ~50MB | ~150MB | ~5MB |
 | **Tempo 1ª query** | ~2s | ~3s | ~0.3s |
+| **Cookies persistente** | ✅ `requests.Session` | ✅ `context.cookies()` | ✅ `--cookies` + `--cookies-jar` |
+| **Wait/Timeout** | ❌ `time.sleep()` | ✅ `page.wait_for_selector()` | ✅ `faf wait \".sel\"` |
+| **Retry automático** | ❌ manual | ❌ manual | ✅ `--retries N` + backoff |
+| **Cache em disco** | ❌ manual | ❌ manual | ✅ `--cache .cache` |
+| **REPL/Pipe** | ❌ | ❌ | ✅ `faf repl` + `--stdin` |
 
 ---
 
@@ -387,13 +435,21 @@ faf-browser/
 - [x] Error handling com stack traces legíveis
 - [x] Execução de `<script>` tags inline + externas
 - [x] CLI: `faf --js "document.title"` e `--js-file`
-- [x] 215 testes, 0 falhas
+- [x] 240 testes, 0 falhas
 
-### 🔮 M4+ (Futuro)
-- [ ] Cookies e sessão persistente
-- [ ] WaitForSelector com timeout
+### ✅ M4 — Ferramentas de Crawler Profissional (Concluído)
+- [x] 🍪 **Cookies** — `--cookies` e `--cookies-jar` com formato Netscape, sessão persistente
+- [x] ⏳ **Wait** — `faf wait \".produto\"` aguarda elemento carregar com timeout e polling
+- [x] 💻 **REPL** — `faf repl --url <url>` modo interativo + `--stdin` para pipes
+- [x] 🐌 **Delay** — `--delay N` e `--random-delay MIN MAX` no `follow`
+- [x] 🔁 **Retry** — `--retries N` com exponential backoff (500, 429, timeout)
+- [x] 📋 **HTTP Info** — `--show-headers` e `--show-status` na resposta
+- [x] 💾 **Cache** — `--cache .faf-cache` com SHA256 + TTL configurável
+- [x] 🧪 240 testes, 0 falhas
+
+### 🔮 M5+ (Futuro)
+- [ ] Click e preenchimento de formulários
 - [ ] Screenshot (renderização via tiny-skia)
-- [ ] Modo interativo (stdin → eval → stdout)
 - [ ] Suporte a Windows/macOS
 
 ---
@@ -410,7 +466,7 @@ cargo clippy
 # Build release
 cargo build --release
 
-# 215 testes, 0 falhas, clippy limpo
+# 240 testes, 0 falhas, clippy limpo
 ```
 
 ---

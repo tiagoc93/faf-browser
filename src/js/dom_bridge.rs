@@ -18,6 +18,7 @@ fn query_result_to_json(result: &crate::dom::QueryResult) -> serde_json::Value {
         "text": result.text,
         "attributes": attrs,
         "innerText": result.text,
+        "textContent": result.text,
         "innerHTML": result.inner_html,
     })
 }
