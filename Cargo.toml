@@ -1,0 +1,40 @@
+[package]
+name = "faf-browser"
+version = "0.1.0"
+edition = "2024"
+description = "FAF BROWSER — Fast As Fuck. Navegador headless 100% Rust, minimalista e agressivamente rápido."
+authors = ["Tiago Coelho"]
+
+[dependencies]
+# HTTP
+reqwest = { version = "0.12", features = ["json", "socks", "cookies"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+# HTML/DOM
+scraper = "0.22"
+# CSS
+cssparser = "0.34"
+selectors = "0.26"
+tiny-skia = "0.11"
+# JS
+quick-js = "0.4"
+# CLI
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Erros
+anyhow = "1"
+thiserror = "2"
+# Util
+url = "2"
+log = "0.4"
+env_logger = "0.11"
+# Config
+
+[dev-dependencies]
+rstest = "0.23"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+strip = true
