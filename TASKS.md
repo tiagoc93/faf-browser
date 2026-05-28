@@ -320,7 +320,7 @@ echo "document.title" | faf --url https://books.toscrape.com/ --stdin
 | M2 — CSS Engine | 8 | ✅ Concluído |
 | M2.5 — Polimento CLI | 8 | ✅ Concluído |
 | M3 — JavaScript Engine | 10 | ✅ Concluído |
-| **M4 — Sessão, Interação & Pipeline** | **8** | **🔄 6/8 concluídas** |
+| **M4 — Sessão, Interação & Pipeline** | **8** | **✅ Concluído** |
 | M5 — Extração Avançada | 6 | 📋 Planejado |
 | **Total** | **52** | **36 concluídas · 9 planejadas** |
 
