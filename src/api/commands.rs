@@ -1,5 +1,6 @@
 use clap::Parser;
 use rand::Rng;
+use std::io::{self, BufRead, Write};
 use url::Url;
 
 /// FAF BROWSER — Fast As Fuck. Navegador headless 100% Rust.
@@ -9,6 +10,10 @@ pub struct Cli {
     /// URL para buscar
     pub url: Option<String>,
 
+    /// URL para buscar (alternativa ao argumento posicional)
+    #[arg(long = "url", global = true)]
+    pub url_flag: Option<String>,
+
     /// Arquivo de script JavaScript
     #[arg(short = 's', long = "js")]
     pub js_script: Option<String>,
@@ -16,6 +21,10 @@ pub struct Cli {
     /// Caminho para arquivo JavaScript a ser executado
     #[arg(long = "js-file")]
     pub js_file: Option<String>,
+
+    /// Lê expressões JS da entrada padrão (útil para pipes)
+    #[arg(long = "stdin")]
+    pub stdin: bool,
 
     /// Desabilita execução automática de scripts da página
     #[arg(long = "no-scripts")]
@@ -137,6 +146,11 @@ pub struct FollowArgs {
 }
 
 #[derive(clap::Args, Debug)]
+pub struct ReplArgs {
+    // No additional flags needed currently
+}
+
+#[derive(clap::Args, Debug)]
 pub struct WaitArgs {
     /// Seletor CSS para aguardar
     pub selector: String,
@@ -167,12 +181,14 @@ pub enum Command {
     Follow(FollowArgs),
     /// Aguardar elemento CSS aparecer no DOM
     Wait(WaitArgs),
+    /// Modo interativo REPL para executar múltiplos comandos JS
+    Repl(ReplArgs),
 }
 
 /// Executa o comando CLI
 pub async fn run(cli: Cli) -> anyhow::Result<()> {
     // Se não tem URL, mostra ajuda
-    let url = match &cli.url {
+    let url = match cli.url_flag.as_ref().or(cli.url.as_ref()) {
         Some(u) => u.clone(),
         None => {
             println!("FAF BROWSER v{}", env!("CARGO_PKG_VERSION"));
@@ -261,6 +277,39 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 println!("{}", serde_json::to_string_pretty(&json_result)?);
             }
             _ => println!("{}", result),
+        }
+        return Ok(());
+    }
+
+    // Se --stdin foi passado, ler expressões JS da entrada padrão
+    if cli.stdin {
+        let mut rt = crate::js::JsRuntime::with_client(client.clone())?;
+        rt.set_dom(&doc)?;
+        rt.init_timers()?;
+        rt.init_fetch()?;
+
+        if !cli.no_scripts {
+            let base_url = url::Url::parse(&url)?;
+            rt.execute_page_scripts(&doc, &base_url, &client).await?;
+        }
+
+        let stdin = io::stdin();
+        for line in stdin.lock().lines() {
+            let line = line?;
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            match format.as_str() {
+                "json" => match rt.eval_json_with_timeout(trimmed, cli.js_timeout) {
+                    Ok(result) => println!("{}", serde_json::to_string_pretty(&result)?),
+                    Err(e) => eprintln!("Erro: {}", e),
+                },
+                _ => match rt.eval_with_timeout(trimmed, cli.js_timeout) {
+                    Ok(result) => println!("{}", result),
+                    Err(e) => eprintln!("Erro: {}", e),
+                },
+            }
         }
         return Ok(());
     }
@@ -616,6 +665,63 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 args.selector,
                 args.timeout
             );
+        }
+        Some(Command::Repl(_args)) => {
+            let mut rt = crate::js::JsRuntime::with_client(client.clone())?;
+            rt.set_dom(&doc)?;
+            rt.init_timers()?;
+            rt.init_fetch()?;
+
+            if !cli.no_scripts {
+                let base_url = url::Url::parse(&url)?;
+                rt.execute_page_scripts(&doc, &base_url, &client).await?;
+            }
+
+            println!("FAF REPL — Digite .help para ajuda, .exit para sair.");
+            let mut json_mode = format == "json";
+
+            loop {
+                print!("> ");
+                io::stdout().flush()?;
+                let mut line = String::new();
+                if io::stdin().read_line(&mut line)? == 0 {
+                    break;
+                }
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                match trimmed {
+                    ".exit" => break,
+                    ".help" => {
+                        println!("Comandos REPL:");
+                        println!("  .exit  — Sair do REPL");
+                        println!("  .help  — Mostrar esta ajuda");
+                        println!("  .json  — Alternar modo JSON");
+                        println!("  .clear — Limpar tela (placeholder)");
+                    }
+                    ".json" => {
+                        json_mode = !json_mode;
+                        println!("Modo JSON: {}", if json_mode { "ligado" } else { "desligado" });
+                    }
+                    ".clear" => {
+                        println!("clear");
+                    }
+                    _ => {
+                        if json_mode {
+                            match rt.eval_json_with_timeout(trimmed, cli.js_timeout) {
+                                Ok(result) => println!("{}", serde_json::to_string_pretty(&result)?),
+                                Err(e) => eprintln!("Erro: {}", e),
+                            }
+                        } else {
+                            match rt.eval_with_timeout(trimmed, cli.js_timeout) {
+                                Ok(result) => println!("{}", result),
+                                Err(e) => eprintln!("Erro: {}", e),
+                            }
+                        }
+                    }
+                }
+            }
         }
         None => {
             // Extração completa da página
