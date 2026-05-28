@@ -121,6 +121,17 @@ pub fn find_computed_style(
         .unwrap_or_default()
 }
 
+#[derive(Serialize)]
+pub struct FollowPageResult {
+    pub url: String,
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_heading: Option<String>,
+    pub text_snippet: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extracted: Option<Vec<serde_json::Value>>,
+}
+
 /// Extrai dados estruturados de um HtmlDocument
 pub fn extract_page(url: &str, doc: &HtmlDocument) -> PageOutput {
     PageOutput {

@@ -2,6 +2,7 @@ use crate::utils::config::Config;
 use reqwest::Client;
 
 /// Cliente HTTP do FAF Browser
+#[derive(Clone)]
 pub struct HttpClient {
     client: Client,
     config: Config,
@@ -69,6 +70,11 @@ impl HttpClient {
     /// Retorna referência à config
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    /// Retorna uma cópia do cliente reqwest interno
+    pub fn inner_client(&self) -> reqwest::Client {
+        self.client.clone()
     }
 }
 

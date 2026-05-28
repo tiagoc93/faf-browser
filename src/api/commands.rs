@@ -57,6 +57,28 @@ pub struct Cli {
     pub command: Option<Command>,
 }
 
+#[derive(clap::Args, Debug)]
+pub struct FollowArgs {
+    /// Seletor CSS para encontrar links
+    pub selector: String,
+
+    /// Seletor CSS para extrair dados de cada página seguida
+    #[arg(long = "extract")]
+    pub extract: Option<String>,
+
+    /// Máximo de páginas a visitar
+    #[arg(long = "max", default_value = "10")]
+    pub max: u64,
+
+    /// Número de requisições concorrentes
+    #[arg(long = "concurrency", default_value = "3")]
+    pub concurrency: usize,
+
+    /// Restringir ao mesmo domínio
+    #[arg(long = "same-domain", default_value = "true", action = clap::ArgAction::Set)]
+    pub same_domain: bool,
+}
+
 #[derive(clap::Subcommand, Debug)]
 pub enum Command {
     /// Extrair todos os links da página
@@ -70,6 +92,8 @@ pub enum Command {
         /// Seletor CSS
         selector: String,
     },
+    /// Seguir links encontrados por um seletor, visitando cada página
+    Follow(FollowArgs),
 }
 
 /// Executa o comando CLI
@@ -256,6 +280,137 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 }
             }
         }
+        Some(Command::Follow(args)) => {
+            // 1. Query links on base page
+            let link_results = doc.query(&args.selector)?;
+            let link_results = if let Some(filters) = &cli.filter {
+                let parsed: Vec<crate::api::filter::QueryFilter> = filters
+                    .iter()
+                    .map(|f| crate::api::filter::QueryFilter::parse(f))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| anyhow::anyhow!("Filtro inválido: {}", e))?;
+                crate::api::filter::apply_filters(link_results, &parsed)
+            } else {
+                link_results
+            };
+
+            // 2. Extract hrefs, resolve URLs, filter same-domain
+            let base_url = Url::parse(&url)?;
+            let mut hrefs: Vec<String> = Vec::new();
+            for r in &link_results {
+                if let Some(href) = r.attributes.iter().find(|(k, _)| k == "href").map(|(_, v)| v) {
+                    match base_url.join(href) {
+                        Ok(abs_url) => {
+                            if args.same_domain && abs_url.host_str() != base_url.host_str() {
+                                continue;
+                            }
+                            hrefs.push(abs_url.to_string());
+                        }
+                        Err(_) => continue,
+                    }
+                }
+            }
+
+            // Deduplicar preservando ordem
+            let mut seen = std::collections::HashSet::new();
+            hrefs.retain(|h| seen.insert(h.clone()));
+
+            // 3. Limitar por --max
+            let max = (args.max as usize).min(hrefs.len());
+            hrefs.truncate(max);
+
+            // 4. CSS base (se houver --css ou --no-page-css)
+            let css_input_base = if cli.no_page_css || cli.css.is_some() {
+                load_css_input(&cli.css)?
+            } else {
+                None
+            };
+
+            // 5. Visitar páginas concorrentemente
+            let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(args.concurrency));
+            let mut handles = Vec::with_capacity(hrefs.len());
+
+            for (idx, href) in hrefs.into_iter().enumerate() {
+                let sem = semaphore.clone();
+                let c = client.clone();
+                let extract = args.extract.clone();
+                let css_base = css_input_base.clone();
+                let cli_css = cli.css.clone();
+                let get_fields = cli.get.clone();
+                let no_page_css = cli.no_page_css;
+
+                let handle = tokio::spawn(async move {
+                    let _permit = sem.acquire().await.ok();
+                    let result = follow_page(
+                        c,
+                        &href,
+                        extract.as_deref(),
+                        css_base,
+                        &cli_css,
+                        no_page_css,
+                        &get_fields,
+                    )
+                    .await;
+                    (idx, href, result)
+                });
+                handles.push(handle);
+            }
+
+            // 6. Coletar resultados
+            let mut page_results = Vec::with_capacity(handles.len());
+            for handle in handles {
+                let (idx, href, result) = match handle.await {
+                    Ok((idx, href, Ok(res))) => (idx, href, res),
+                    Ok((_, href, Err(e))) => {
+                        log::warn!("Falha ao visitar {}: {}", href, e);
+                        continue;
+                    }
+                    Err(e) => {
+                        log::warn!("Task panicked: {}", e);
+                        continue;
+                    }
+                };
+                page_results.push((idx, href, result));
+            }
+            page_results.sort_by_key(|(idx, _, _)| *idx);
+
+            // 7. Output
+            match format.as_str() {
+                "json" => {
+                    let json_results: Vec<serde_json::Value> = page_results
+                        .into_iter()
+                        .map(|(_, _, r)| serde_json::to_value(r).unwrap_or(serde_json::Value::Null))
+                        .collect();
+                    println!("{}", serde_json::to_string_pretty(&json_results)?);
+                }
+                "jsonl" => {
+                    for (_, _, r) in page_results {
+                        println!("{}", serde_json::to_string(&r).unwrap_or_default());
+                    }
+                }
+                "csv" => {
+                    println!("url,title,text_snippet");
+                    for (_, _, r) in page_results {
+                        let title = escape_csv_field(&r.title.unwrap_or_default());
+                        let snippet = escape_csv_field(&r.text_snippet);
+                        println!("{},{},{}", r.url, title, snippet);
+                    }
+                }
+                _ => {
+                    println!("🔍 Follow: {} página(s) visitada(s)", page_results.len());
+                    for (i, (_, _, r)) in page_results.iter().enumerate() {
+                        let title = r.title.as_deref().unwrap_or("(sem título)");
+                        println!(
+                            "  [{}] {} → {} | {}",
+                            i + 1,
+                            r.url,
+                            title,
+                            truncate(&r.text_snippet, 80)
+                        );
+                    }
+                }
+            }
+        }
         None => {
             // Extração completa da página
             let output = crate::api::output::extract_page(&url, &doc);
@@ -307,5 +462,79 @@ fn truncate(s: &str, max: usize) -> String {
     } else {
         let truncated: String = s.chars().take(max).collect();
         format!("{}...", truncated)
+    }
+}
+
+/// Visita uma página seguida e extrai dados.
+async fn follow_page(
+    client: crate::http::client::HttpClient,
+    url: &str,
+    extract: Option<&str>,
+    css_input_base: Option<String>,
+    cli_css: &Option<String>,
+    no_page_css: bool,
+    get_fields: &Option<Vec<String>>,
+) -> anyhow::Result<crate::api::output::FollowPageResult> {
+    let html = client.get(url).await?;
+    let doc = crate::dom::HtmlDocument::parse(&html);
+
+    let title = doc.title();
+    let first_heading = doc
+        .query("h1")
+        .ok()
+        .and_then(|r| r.into_iter().next())
+        .map(|r| r.text);
+    let text = doc.visible_text();
+    let text_snippet = truncate(&text, 200);
+
+    let extracted = if let Some(selector) = extract {
+        let results = doc.query(selector)?;
+
+        let css_input = if no_page_css || cli_css.is_some() {
+            css_input_base
+        } else {
+            // Não extraímos CSS automaticamente de cada página seguida
+            // para evitar problemas de Send com scraper::Html em tasks spawnadas.
+            None
+        };
+
+        if let Some(css_text) = css_input {
+            let stylesheet = crate::css::parser::parse_css(&css_text)?;
+            let styles = crate::css::style::compute_styles(&doc, &stylesheet);
+            let items = crate::api::output::to_styled_items(results, &styles);
+            Some(
+                items
+                    .into_iter()
+                    .map(|item| crate::api::output::filter_fields(get_fields, &item))
+                    .collect(),
+            )
+        } else {
+            let output = crate::api::output::query_to_output(selector, results);
+            Some(
+                output
+                    .results
+                    .into_iter()
+                    .map(|item| serde_json::to_value(item).unwrap_or(serde_json::Value::Null))
+                    .collect(),
+            )
+        }
+    } else {
+        None
+    };
+
+    Ok(crate::api::output::FollowPageResult {
+        url: url.to_string(),
+        title,
+        first_heading,
+        text_snippet,
+        extracted,
+    })
+}
+
+fn escape_csv_field(s: &str) -> String {
+    if s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r') {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
     }
 }
