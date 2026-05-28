@@ -11,12 +11,8 @@ pub struct Cli {
     #[arg(short = 's', long = "js")]
     pub js_script: Option<String>,
 
-    /// Seletor CSS para query
-    #[arg(short = 'q', long = "query")]
-    pub query: Option<String>,
-
     /// CSS inline ou caminho para arquivo CSS
-    #[arg(long = "css", visible_alias = "style")]
+    #[arg(long = "css", visible_alias = "style", global = true)]
     pub css: Option<String>,
 
     /// Proxy (http:// ou socks5://)
@@ -36,7 +32,7 @@ pub struct Cli {
     pub verbose: bool,
 
     /// Saída em JSON
-    #[arg(short = 'j', long = "json")]
+    #[arg(short = 'j', long = "json", global = true)]
     pub json: bool,
 
     /// Comando: links, images, metadata, query
@@ -67,7 +63,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         None => {
             println!("FAF BROWSER v{}", env!("CARGO_PKG_VERSION"));
             println!("Uso: faf <url> [opções]");
-            println!("     faf --query 'h1' --url https://site.com");
+            println!("     faf query 'h1' --url https://site.com");
             println!("     faf links --url https://site.com");
             return Ok(());
         }

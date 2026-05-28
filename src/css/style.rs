@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 type ElementKey = (String, Option<String>, Vec<String>, String);
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ComputedStyle {
     pub color: String,
     pub background_color: String,
@@ -23,6 +23,28 @@ pub struct ComputedStyle {
     pub padding_bottom: String,
     pub padding_left: String,
     pub display: String,
+}
+
+impl Default for ComputedStyle {
+    fn default() -> Self {
+        Self {
+            color: "inherit".to_string(),
+            background_color: "transparent".to_string(),
+            font_size: "16px".to_string(),
+            font_family: "serif".to_string(),
+            width: "auto".to_string(),
+            height: "auto".to_string(),
+            margin_top: "0".to_string(),
+            margin_right: "0".to_string(),
+            margin_bottom: "0".to_string(),
+            margin_left: "0".to_string(),
+            padding_top: "0".to_string(),
+            padding_right: "0".to_string(),
+            padding_bottom: "0".to_string(),
+            padding_left: "0".to_string(),
+            display: "block".to_string(),
+        }
+    }
 }
 
 /// Compute styles for all elements in a document matched by a stylesheet.
@@ -227,21 +249,21 @@ mod tests {
     #[test]
     fn test_default_computed_style() {
         let style = ComputedStyle::default();
-        assert_eq!(style.color, "");
-        assert_eq!(style.background_color, "");
-        assert_eq!(style.font_size, "");
-        assert_eq!(style.font_family, "");
-        assert_eq!(style.width, "");
-        assert_eq!(style.height, "");
-        assert_eq!(style.margin_top, "");
-        assert_eq!(style.margin_right, "");
-        assert_eq!(style.margin_bottom, "");
-        assert_eq!(style.margin_left, "");
-        assert_eq!(style.padding_top, "");
-        assert_eq!(style.padding_right, "");
-        assert_eq!(style.padding_bottom, "");
-        assert_eq!(style.padding_left, "");
-        assert_eq!(style.display, "");
+        assert_eq!(style.color, "inherit");
+        assert_eq!(style.background_color, "transparent");
+        assert_eq!(style.font_size, "16px");
+        assert_eq!(style.font_family, "serif");
+        assert_eq!(style.width, "auto");
+        assert_eq!(style.height, "auto");
+        assert_eq!(style.margin_top, "0");
+        assert_eq!(style.margin_right, "0");
+        assert_eq!(style.margin_bottom, "0");
+        assert_eq!(style.margin_left, "0");
+        assert_eq!(style.padding_top, "0");
+        assert_eq!(style.padding_right, "0");
+        assert_eq!(style.padding_bottom, "0");
+        assert_eq!(style.padding_left, "0");
+        assert_eq!(style.display, "block");
     }
 
     #[test]
