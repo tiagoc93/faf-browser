@@ -174,6 +174,20 @@ pub struct ClickArgs {
     pub timeout: u64,
 }
 
+#[derive(clap::Args, Debug)]
+pub struct WatchArgs {
+    /// Seletor CSS do elemento a monitorar (opcional: monitora a página inteira)
+    pub selector: Option<String>,
+
+    /// Intervalo em segundos entre verificações (default: 30)
+    #[arg(long = "interval", default_value = "30")]
+    pub interval: u64,
+
+    /// Número máximo de verificações (0 = infinito, default: 0)
+    #[arg(long = "max-checks", default_value = "0")]
+    pub max_checks: u64,
+}
+
 #[derive(clap::Subcommand, Debug)]
 pub enum Command {
     /// Extrair todos os links da página
@@ -193,6 +207,8 @@ pub enum Command {
     Wait(WaitArgs),
     /// Simular click em elemento CSS
     Click(ClickArgs),
+    /// Monitorar mudanças em uma URL ou elemento
+    Watch(WatchArgs),
     /// Modo interativo REPL para executar múltiplos comandos JS
     Repl(ReplArgs),
 }
@@ -724,6 +740,96 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                     println!("📌 Título pós-click: {}", title);
                 }
                 println!("📝 {}", page_result.text_snippet);
+            }
+        }
+        Some(Command::Watch(args)) => {
+            let mut previous_value: Option<String> = None;
+            let mut checks: u64 = 0;
+
+            loop {
+                if args.max_checks > 0 && checks >= args.max_checks {
+                    break;
+                }
+
+                let resp = client.get(&url).await?;
+
+                if cli.show_status {
+                    println!("📋 Status: {} {}", resp.status, resp.status_text);
+                }
+                if cli.show_headers {
+                    for (key, value) in &resp.headers {
+                        println!("  {}: {}", key, value);
+                    }
+                }
+
+                let html = resp.body;
+                let doc = crate::dom::HtmlDocument::parse(&html);
+
+                let current_value = if let Some(ref selector) = args.selector {
+                    doc.query(selector)
+                        .ok()
+                        .and_then(|r| r.into_iter().next())
+                        .map(|r| r.text)
+                        .unwrap_or_else(|| "(elemento não encontrado)".to_string())
+                } else {
+                    let title = doc.title().unwrap_or_default();
+                    let text = doc.visible_text();
+                    let snippet = if text.len() > 100 {
+                        format!("{}...", &text[..100])
+                    } else {
+                        text.clone()
+                    };
+                    format!("{} | {}", title, snippet)
+                };
+
+                let now = chrono::Local::now().format("%H:%M:%S").to_string();
+
+                if let Some(ref prev) = previous_value {
+                    if *prev != current_value {
+                        if format == "json" {
+                            let json = serde_json::json!({
+                                "time": now,
+                                "selector": args.selector.as_deref().unwrap_or("*"),
+                                "previous": prev,
+                                "current": current_value,
+                                "changed": true,
+                            });
+                            println!("{}", serde_json::to_string(&json)?);
+                        } else {
+                            println!("[{}] ⚠️ MUDOU! (antes: {}) → {}", now, prev, current_value);
+                        }
+                    } else {
+                        if format == "json" {
+                            let json = serde_json::json!({
+                                "time": now,
+                                "value": current_value,
+                                "changed": false,
+                            });
+                            println!("{}", serde_json::to_string(&json)?);
+                        } else {
+                            println!("[{}] {}", now, current_value);
+                        }
+                    }
+                } else {
+                    if format == "json" {
+                        let json = serde_json::json!({
+                            "time": now,
+                            "value": current_value,
+                            "changed": false,
+                            "first": true,
+                        });
+                        println!("{}", serde_json::to_string(&json)?);
+                    } else {
+                        println!("[{}] {}", now, current_value);
+                    }
+                }
+
+                previous_value = Some(current_value);
+                checks += 1;
+
+                if args.max_checks == 0 || checks < args.max_checks {
+                    tokio::time::sleep(std::time::Duration::from_secs(args.interval)).await;
+                }
             }
         }
         Some(Command::Repl(_args)) => {

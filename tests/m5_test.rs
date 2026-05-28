@@ -484,3 +484,91 @@ fn test_scroll_by() {
         stdout
     );
 }
+
+// ---------------------------------------------------------------------------
+// T042 — Watch Mode
+// ---------------------------------------------------------------------------
+
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Servidor que alterna conteúdo entre requests
+fn start_watch_changing_server() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let counter = std::sync::Arc::new(AtomicU64::new(0));
+    let c = counter.clone();
+    thread::spawn(move || {
+        for _ in 0..4 {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let count = c.fetch_add(1, Ordering::SeqCst);
+            let body = format!("<html><body><h1>Valor: {}</h1></body></html>", count);
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = stream.write_all(response.as_bytes());
+        }
+    });
+    port
+}
+
+#[tokio::test]
+async fn test_watch_detect_change() {
+    let port = start_watch_changing_server();
+
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "watch",
+        "h1",
+        "--interval",
+        "1",
+        "--max-checks",
+        "3",
+    ]);
+
+    let result = run(cli).await;
+    assert!(result.is_ok(), "watch should succeed: {:?}", result);
+}
+
+#[tokio::test]
+async fn test_watch_max_checks() {
+    let port = start_watch_changing_server();
+
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "watch",
+        "h1",
+        "--interval",
+        "1",
+        "--max-checks",
+        "2",
+    ]);
+
+    let result = run(cli).await;
+    assert!(result.is_ok(), "watch with max-checks should succeed: {:?}", result);
+}
+
+#[tokio::test]
+async fn test_watch_json_output() {
+    let port = start_watch_changing_server();
+
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "--json",
+        "watch",
+        "h1",
+        "--interval",
+        "1",
+        "--max-checks",
+        "2",
+    ]);
+
+    let result = run(cli).await;
+    assert!(result.is_ok(), "watch --json should succeed: {:?}", result);
+}
