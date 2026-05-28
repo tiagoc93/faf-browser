@@ -7,8 +7,8 @@
   <img alt="Rust" src="https://img.shields.io/badge/Rust-Edition_2024-orange?style=for-the-badge&logo=rust">
 </picture>
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/test-180_passed-green?style=for-the-badge">
-  <img alt="Tests" src="https://img.shields.io/badge/test-180_passed-green?style=for-the-badge">
+  <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/test-215_passed-green?style=for-the-badge">
+  <img alt="Tests" src="https://img.shields.io/badge/test-215_passed-green?style=for-the-badge">
 </picture>
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge">
@@ -23,9 +23,9 @@
 
 > *"O Chrome pesa 500MB de RAM? A gente faz em 50MB."*
 
-FAF Browser é um navegador headless minimalista e agressivamente rápido, construído do zero em Rust. Sem Electron, sem Chromium embutido, sem overhead. Um binário único que faz scraping, crawleamento e inspeção de páginas web com performance nativa.
+FAF Browser é um navegador headless minimalista e agressivamente rápido, construído do zero em Rust. Sem Electron, sem Chromium embutido, sem overhead. Um binário único que faz scraping, crawleamento, **execução de JavaScript** e inspeção de páginas web com performance nativa.
 
-Renderizado pelo CSS Engine próprio. Crawleador multithread embutido. Tudo em **menos de 1MB** de binário.
+Renderizado pelo CSS Engine próprio. Runtime **QuickJS** embarcado para execução de JavaScript. Crawleador multithread. Tudo em **menos de 1MB** de binário.
 
 ---
 
@@ -46,9 +46,12 @@ Renderizado pelo CSS Engine próprio. Crawleador multithread embutido. Tudo em *
 | 🕷️ **Crawler** — `faf follow` — siga links, visite páginas, extraia dados | ✅ |
 | 📋 **Múltiplos formatos** — texto, JSON, JSONL, CSV | ✅ |
 | 🔌 **Proxy** — HTTP e SOCKS5 | ✅ |
+| 🟨 **JavaScript Engine** — QuickJS `rquickjs` com DOM bridge, timers, fetch | ✅ **NOVO** |
+| 🔗 **Fetch API bridge** — `fetch()` no JS chama o reqwest do Rust | ✅ **NOVO** |
+| ⏱️ **setTimeout / setInterval** — timers integrados com event loop tokio | ✅ **NOVO** |
+| 📜 **Script tags** — execução automática de `<script>` inline e externo | ✅ **NOVO** |
 | 📦 **Binário único** — ~1MB, zero dependências runtime | ✅ |
-| 🧪 **180 testes** — unitários + integração em sites reais | ✅ |
-| 🔮 **JavaScript Engine** — QuickJS (em desenvolvimento) | 🔜 M3 |
+| 🧪 **215 testes** — unitários + integração em sites reais | ✅ |
 
 ---
 
@@ -63,8 +66,7 @@ cd faf-browser
 cargo build --release
 
 # O binário estará em ./target/release/faf-browser
-# (ou instale via cargo)
-cargo install --path .
+sudo cp ./target/release/faf-browser /usr/local/bin/faf
 ```
 
 ### Pré-requisitos
@@ -75,6 +77,32 @@ cargo install --path .
 ---
 
 ## 📖 Uso
+
+### Execução de JavaScript 🔥
+
+```bash
+# Ler título da página
+faf https://books.toscrape.com/ --js "document.title"
+# → "All products | Books to Scrape - Sandbox"
+
+# Query no DOM
+faf https://books.toscrape.com/ --js "document.querySelectorAll('h3').length"
+# → 20
+
+# Fetch API real (chama reqwest do Rust!)
+faf https://httpbin.org/get --js "fetch('https://httpbin.org/get').text()" --json
+# → { "args": {}, "headers": {...}, "origin": "...", "url": "..." }
+
+# Executar arquivo .js
+faf https://site.com --js-file script.js
+
+# Desabilitar scripts da página
+faf https://site.com --js "document.title" --no-scripts
+
+# Timeout customizado para JS
+faf https://site.com --js "while(true){}" --js-timeout 2
+# → "JavaScript execution timed out after 2s"
+```
 
 ### Extração completa de página
 
@@ -239,6 +267,9 @@ faf https://site.com -v
 
 # Desabilitar CSS da página
 faf https://site.com --no-page-css query "h1"
+
+# Desabilitar execução de scripts da página
+faf https://site.com --js "document.title" --no-scripts
 ```
 
 ---
@@ -248,8 +279,8 @@ faf https://site.com --no-page-css query "h1"
 ```
 faf-browser/
 ├── src/
-│   ├── main.rs              # Entry point
-│   ├── lib.rs               # Modulos públicos
+│   ├── main.rs              # Entry point (#[tokio::main])
+│   ├── lib.rs               # Módulos públicos
 │   ├── api/
 │   │   ├── mod.rs
 │   │   ├── commands.rs      # CLI (clap), execução de comandos
@@ -271,13 +302,16 @@ faf-browser/
 │   │   └── layout.rs        # Box model (margin, padding, width, height)
 │   ├── js/
 │   │   ├── mod.rs
-│   │   └── engine.rs        # QuickJS (em desenvolvimento)
+│   │   ├── engine.rs        # Runtime QuickJS (rquickjs)
+│   │   ├── dom_bridge.rs    # Ponte DOM ↔ JS (document.querySelector, etc)
+│   │   └── fetch_bridge.rs  # Ponte fetch ↔ reqwest (HTTP do JS)
 │   └── utils/
 │       ├── mod.rs
 │       ├── config.rs        # Configurações
 │       └── error.rs         # Tipos de erro
 ├── tests/
-│   └── m2_test.rs           # Testes de integração
+│   ├── m2_test.rs           # Testes de integração M2 (CSS)
+│   └── m3_test.rs           # Testes de integração M3 (JS)
 ├── Cargo.toml
 └── README.md
 ```
@@ -293,7 +327,8 @@ faf-browser/
 | CSS Layout | `tiny-skia` | Box model e dimensões |
 | CLI | `clap` (derive) | Interface de linha de comando |
 | Serialização | `serde` + `serde_json` | Output JSON, CSV, JSONL |
-| JS Runtime | `quick-js` | QuickJS embarcado (M3) |
+| JS Runtime | `rquickjs` (QuickJS) | Runtime JavaScript embarcado |
+| Regex | `regex` | Filtros com expressões regulares |
 
 ---
 
@@ -310,7 +345,10 @@ faf-browser/
 | **Filtros** | ✅ `re.compile` | ✅ `filter()` | ✅ `--filter` |
 | **Crawler embutido** | ❌ | ❌ | ✅ `follow` |
 | **JSONL/CSV** | ❌ manual | ❌ manual | ✅ nativo |
-| **JavaScript** | ❌ | ✅ | 🔜 M3 |
+| **JavaScript** | ❌ | ✅ | ✅ **QuickJS** |
+| **DOM bridge JS** | ❌ | ✅ | ✅ `document.querySelector` |
+| **Fetch via JS** | ❌ | ✅ | ✅ `fetch()` → reqwest |
+| **Scripts da página** | ❌ | ✅ | ✅ `<script>` execução |
 | **Screenshots** | ❌ | ✅ | ❌ (planejado) |
 | **RAM (página média)** | ~50MB | ~150MB | ~5MB |
 | **Tempo 1ª query** | ~2s | ~3s | ~0.3s |
@@ -326,11 +364,11 @@ faf-browser/
 - [x] Output JSON
 
 ### ✅ M2 — CSS Engine (Concluído)
-- [x] Parser CSS
+- [x] Parser CSS (cssparser)
 - [x] Selector matching + especificidade
-- [x] Computed styles + cascata
+- [x] Computed styles + cascata (inline > ID > class > tag)
 - [x] Box model, cores, fontes
-- [x] Estilos automáticos da página `<style>` + `<link>`
+- [x] Estilos automáticos da página (`<style>` + `<link>`)
 
 ### ✅ M2.5 — Extração Avançada (Concluído)
 - [x] `--filter` com regex e attribute match
@@ -339,22 +377,24 @@ faf-browser/
 - [x] `--format csv|jsonl`
 - [x] 180 testes, 0 falhas
 
-### 🔜 M3 — JavaScript Engine
-- [ ] Embed QuickJS: runtime JS
-- [ ] Bridge DOM ↔ JS: `document.getElementById`, `querySelector`
-- [ ] `setTimeout` / `setInterval` com event loop tokio
-- [ ] Fetch API via JS → reqwest
-- [ ] Scripts inline + `<script src=>` externos
-- [ ] CLI: `faf --js "document.title" --url <url>`
+### ✅ M3 — JavaScript Engine (Concluído)
+- [x] Runtime QuickJS embarcado (`rquickjs`)
+- [x] Bridge DOM ↔ JS: `document.getElementById`, `querySelector`
+- [x] `setTimeout` / `setInterval` com event loop tokio
+- [x] `fetch()` API — chamadas HTTP reais via reqwest
+- [x] Timeout de execução JS (proteção contra loop infinito)
+- [x] `console.log/warn/error` → Rust logger
+- [x] Error handling com stack traces legíveis
+- [x] Execução de `<script>` tags inline + externas
+- [x] CLI: `faf --js "document.title"` e `--js-file`
+- [x] 215 testes, 0 falhas
 
 ### 🔮 M4+ (Futuro)
 - [ ] Cookies e sessão persistente
 - [ ] WaitForSelector com timeout
 - [ ] Screenshot (renderização via tiny-skia)
 - [ ] Modo interativo (stdin → eval → stdout)
-- [ ] Documentação completa com exemplos
 - [ ] Suporte a Windows/macOS
-- [ ] CLI: `faf --js "document.title" --url <url>` com QuickJS
 
 ---
 
@@ -370,7 +410,7 @@ cargo clippy
 # Build release
 cargo build --release
 
-# 180 testes, 0 falhas, clippy limpo
+# 215 testes, 0 falhas, clippy limpo
 ```
 
 ---
@@ -384,6 +424,7 @@ FAF Browser é construído com foco obsessivo em performance:
 - **RAM por página:** ~5MB (vs ~150MB Chrome headless)
 - **Concorrência nativa:** tokio async + semaphore no crawler
 - **CSS Engine:** cascata O(n) com especificidade em memória
+- **JS Engine:** QuickJS inicializa em ~10ms
 
 ```bash
 # Crawlear 10 páginas em paralelo em < 5s
@@ -392,6 +433,12 @@ faf https://books.toscrape.com/ follow ".product_pod h3 a" \
   --max 10 \
   --concurrency 5 \
   --format csv > produtos.csv
+
+# Executar JS e extrair dados estruturados
+faf https://books.toscrape.com/ \
+  --js "document.querySelectorAll('.product_pod').length" \
+  --json
+# → 20
 ```
 
 ---
