@@ -20,7 +20,7 @@
 | T024 | Fetch API bridge | ⏳ Pendente |
 | T025 | Timeout de execução JS (5s default) | ⏳ Pendente |
 | T026 | Console.log → Rust logger | ✅ Feito |
-| T027 | Error handling com stack traces | ⏳ Pendente |
+| T027 | Error handling com stack traces | ✅ Feito |
 | T028 | Suporte a `<script>` tags inline + externas | ⏳ Pendente |
 | T029 | CLI --js e --js-file | ⏳ Pendente |
 | T030 | Testes M3 (integração) | ⏳ Pendente |
