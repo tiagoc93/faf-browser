@@ -301,6 +301,78 @@ echo "document.title" | faf --url https://books.toscrape.com/ --stdin
 
 ---
 
+## 📋 M4.5 — Refinamentos Pós-M4 (3 tasks · Planejado)
+
+### F001 — Fix: follow --extract vazando DOM entre páginas (🔴 crítica)
+**Arquivos:** `src/api/commands.rs` (follow handler)
+
+**Problema:** Quando `faf follow` usa `--extract`, os elementos extraídos de páginas anteriores estão vazando para o resultado da página atual. Cada visita deveria extrair APENAS elementos do DOM da página visitada, sem contaminação de páginas anteriores.
+
+**Evidência:** No teste real com `--extract "h3, .price_color" --max 5`, cada livro retornou de 10 a 14 elementos `extracted` quando deveria retornar apenas 2 (1 preço + 1 estoque).
+
+**Causa provável:** O buffer de `extracted` não está sendo resetado entre iterações do loop de follow. A lista de resultados acumula ao invés de limpar a cada página.
+
+**Implementação:**
+1. Localizar o loop de follow em `commands.rs` (~linha 530-560)
+2. Garantir que o vetor/lista de resultados extraídos seja reinicializado a cada iteração de página
+3. Verificar se o `QueryResult` ou estrutura de extração está sendo corretamente clonada/redefinida
+4. Adicionar teste: servidor com 2 páginas diferentes → follow extrai só elementos da página atual
+
+**Critério:**
+- `faf follow "a" --extract "h1" --max 2 --url <url>` → cada resultado tem só 1 h1
+- Nenhum elemento de página anterior aparece no resultado da página atual
+- `cargo test`, `cargo clippy`
+
+---
+
+### F002 — Fix: cookies-jar ignorando Set-Cookie em redirects (🟡 médio)
+**Arquivos:** `src/http/client.rs`, `src/http/cookies.rs`
+
+**Problema:** O `--cookies-jar` não salva cookies quando o site redireciona (ex: httpbin.org/cookies/set faz 302 → /cookies). O reqwest segue redirects por padrão, e os headers `Set-Cookie` das respostas intermediárias (3xx) são perdidos — só vemos os headers da resposta final (200).
+
+**Evidência:** `faf https://httpbin.org/cookies/set?foo=bar --cookies-jar jar.txt` → jar.txt vazio (só cabeçalho Netscape)
+
+**Solução 1 (recomendada):** Habilitar `cookie_store(true)` no reqwest e usar o CookieStore dele em vez do parser manual. O reqwest gerencia cookies entre redirects corretamente.
+
+**Solução 2 (alternativa):** Desabilitar `follow_redirects(false)` no reqwest quando `--cookies-jar` estiver ativo, e tratar redirects manualmente (seguindo Location header + capturando Set-Cookie de cada 3xx).
+
+**Implementação (Solução 1):**
+1. Em `HttpClient::new()`, habilitar `cookie_store(true)` no builder
+2. Usar `reqwest::cookie::Jar` em vez do `Vec<NetscapeCookie>` manual para o store em memória
+3. Converter entre Jar e formato Netscape para persistência
+4. Atualizar `build_cookie_header()` para usar o CookieStore do reqwest
+5. Remover parsing manual de Set-Cookie em `client.rs` (delegar ao reqwest)
+
+**Critério:**
+- `faf https://httpbin.org/cookies/set?k=v --cookies-jar jar.txt` salva cookies mesmo com redirect
+- `faf https://httpbin.org/cookies --cookies jar.txt` reenvia cookies
+- Compatibilidade com formato Netscape mantida (curl -b/-c)
+- `cargo test`, `cargo clippy`
+
+---
+
+### F003 — Enhancement: --filter com operador !~= (negative match) (🟢 pequeno)
+**Arquivos:** `src/api/filter.rs`
+
+**Problema:** O `--filter` suporta `~=` (contém), `==` (exato), `!=` (negação exata) e `^=`/`$=` (prefixo/sufixo), mas não tem operador de **negação de substring**. Não é possível dizer "me dê links que NÃO contenham 'categoria'".
+
+**Evidência:** `faf query "a" --filter "href~=catalogue"` retorna TUDO que contém "catalogue" (incluindo links de categoria), sem como excluir subconjuntos.
+
+**Implementação:**
+1. Adicionar operador `!~=` no parser de filtros: "href!~=category" significa "href NÃO contém 'category'"
+2. Adicionar operador `!^=` (não começa com)
+3. Adicionar operador `!$=` (não termina com)
+4. Atualizar a documentação do filtro no README
+5. Atualizar testes em `filter.rs`
+
+**Critério:**
+- `--filter "href!~=category"` exclui links que contêm "category"
+- `--filter "href!^=http"` exclui links que começam com "http"
+- Compatível com múltiplos filtros AND
+- `cargo test`, `cargo clippy`
+
+---
+
 ## 📋 M5 — Extração Avançada (Planejado · 6 tasks)
 
 - [ ] **T039** — Click via JS: simular click num elemento (seletor → dispatchEvent)
@@ -321,8 +393,9 @@ echo "document.title" | faf --url https://books.toscrape.com/ --stdin
 | M2.5 — Polimento CLI | 8 | ✅ Concluído |
 | M3 — JavaScript Engine | 10 | ✅ Concluído |
 | **M4 — Sessão, Interação & Pipeline** | **8** | **✅ Concluído** |
+| **M4.5 — Refinamentos Pós-M4** | **3** | **📋 Planejado** |
 | M5 — Extração Avançada | 6 | 📋 Planejado |
-| **Total** | **52** | **36 concluídas · 9 planejadas** |
+| **Total** | **55** | **36 concluídas · 12 planejadas** |
 
 ## ✅ Critério de conclusão do MVP
 
