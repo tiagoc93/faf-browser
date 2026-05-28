@@ -89,6 +89,18 @@ pub struct Cli {
     #[arg(long = "cookies-jar", global = true)]
     pub cookies_jar: Option<String>,
 
+    /// Diretório de cache para respostas HTTP
+    #[arg(long = "cache", global = true)]
+    pub cache: Option<String>,
+
+    /// TTL do cache em segundos
+    #[arg(long = "cache-ttl", global = true, default_value = "300")]
+    pub cache_ttl: u64,
+
+    /// Ignorar cache mesmo se o diretório existir
+    #[arg(long = "no-cache", global = true)]
+    pub no_cache: bool,
+
     /// Comando: links, images, metadata, query
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -167,6 +179,9 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         retry_delay_ms: cli.retry_delay,
         cookies_path: cli.cookies.clone(),
         cookies_jar_path: cli.cookies_jar.clone(),
+        cache_dir: cli.cache.clone(),
+        cache_ttl_secs: cli.cache_ttl,
+        no_cache: cli.no_cache,
     };
 
     let client = crate::http::client::HttpClient::new(config)?;

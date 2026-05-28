@@ -1,4 +1,4 @@
-use crate::http::cookies;
+use crate::http::{cache, cookies};
 use crate::utils::config::Config;
 use reqwest::Client;
 use std::collections::HashMap;
@@ -11,6 +11,16 @@ pub struct FetchResponse {
     pub status_text: String,
     pub headers: HashMap<String, String>,
     pub body: String,
+}
+
+/// Converte uma CacheEntry em FetchResponse
+fn cache_entry_to_response(entry: &cache::CacheEntry) -> FetchResponse {
+    FetchResponse {
+        status: entry.status,
+        status_text: entry.status_text.clone(),
+        headers: entry.headers.clone(),
+        body: entry.body.clone(),
+    }
 }
 
 /// Cliente HTTP do FAF Browser
@@ -84,6 +94,17 @@ impl HttpClient {
         url: &str,
         headers: Vec<(&str, &str)>,
     ) -> anyhow::Result<FetchResponse> {
+        // Verificar cache antes de fazer a requisição
+        if let Some(ref cache_dir) = self.config.cache_dir
+            && !self.config.no_cache
+        {
+            let ttl = std::time::Duration::from_secs(self.config.cache_ttl_secs);
+            if let Some(entry) = cache::get_cached(cache_dir, url, ttl) {
+                log::info!("Cache hit para {}", url);
+                return Ok(cache_entry_to_response(&entry));
+            }
+        }
+
         let max_retries = self.config.retries;
         let mut delay_ms = self.config.retry_delay_ms;
         let parsed_url = url::Url::parse(url)?;
@@ -183,6 +204,24 @@ impl HttpClient {
                                     );
                                 }
                         }
+
+                    // Salvar resposta no cache se --cache foi passado
+                    if let Some(ref cache_dir) = self.config.cache_dir {
+                        let entry = cache::CacheEntry {
+                            url: url.to_string(),
+                            status: status_u16,
+                            status_text: status_text.clone(),
+                            headers: headers_map.clone(),
+                            body: body.clone(),
+                            cached_at: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs(),
+                        };
+                        if let Err(e) = cache::set_cached(cache_dir, url, &entry) {
+                            log::warn!("Falha ao salvar cache para {}: {}", url, e);
+                        }
+                    }
 
                     return Ok(FetchResponse {
                         status: status_u16,

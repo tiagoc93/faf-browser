@@ -8,6 +8,9 @@ pub struct Config {
     pub retry_delay_ms: u64,
     pub cookies_path: Option<String>,
     pub cookies_jar_path: Option<String>,
+    pub cache_dir: Option<String>,
+    pub cache_ttl_secs: u64,
+    pub no_cache: bool,
 }
 
 impl Default for Config {
@@ -25,6 +28,9 @@ impl Default for Config {
             retry_delay_ms: 1000,
             cookies_path: None,
             cookies_jar_path: None,
+            cache_dir: None,
+            cache_ttl_secs: 300,
+            no_cache: false,
         }
     }
 }

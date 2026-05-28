@@ -1,6 +1,6 @@
 # ✅ Tasks — FAF BROWSER (Fast As Fuck)
 
-**Total:** 52 tasks | **Concluídas:** 33 | **Estimativa restante:** ~4 meses  
+**Total:** 52 tasks | **Concluídas:** 34 | **Estimativa restante:** ~4 meses  
 **Modelo de delegação:** Kimi K2.6 via `delegate_task()`  
 **Stack:** Rust + Cargo (Edition 2024), rquickjs, tokio, reqwest
 
@@ -71,7 +71,7 @@
 
 ## 📋 M4 — Sessão, Interação & Pipeline (8 tasks)
 
-### T031 — Cookie Persistence (🟡 médio)
+### T031 — Cookie Persistence (🟡 médio) ✅
 **Arquivos:** `src/http/cookies.rs` (novo), `src/utils/config.rs`, `src/http/client.rs`, `src/api/commands.rs`
 
 **O que faz:** Adicionar suporte a cookies de sessão persistente entre chamadas do FAF.
@@ -320,9 +320,9 @@ echo "document.title" | faf --url https://books.toscrape.com/ --stdin
 | M2 — CSS Engine | 8 | ✅ Concluído |
 | M2.5 — Polimento CLI | 8 | ✅ Concluído |
 | M3 — JavaScript Engine | 10 | ✅ Concluído |
-| **M4 — Sessão, Interação & Pipeline** | **8** | **🔄 3/8 concluídas** |
+| **M4 — Sessão, Interação & Pipeline** | **8** | **🔄 4/8 concluídas** |
 | M5 — Extração Avançada | 6 | 📋 Planejado |
-| **Total** | **52** | **33 concluídas · 11 planejadas** |
+| **Total** | **52** | **34 concluídas · 10 planejadas** |
 
 ## ✅ Critério de conclusão do MVP
 
