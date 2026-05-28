@@ -188,6 +188,24 @@ pub struct WatchArgs {
     pub max_checks: u64,
 }
 
+#[derive(clap::Args, Debug)]
+pub struct ScreenshotArgs {
+    /// URL para capturar
+    pub url: String,
+
+    /// Largura do viewport em pixels (default: 1280)
+    #[arg(long = "width", default_value = "1280")]
+    pub width: u32,
+
+    /// Altura do viewport em pixels (default: 0 = scroll inteiro)
+    #[arg(long = "height", default_value = "0")]
+    pub height: u32,
+
+    /// Caminho do arquivo PNG de saída
+    #[arg(long = "output", default_value = "screenshot.png")]
+    pub output: String,
+}
+
 #[derive(clap::Subcommand, Debug)]
 pub enum Command {
     /// Extrair todos os links da página
@@ -209,21 +227,27 @@ pub enum Command {
     Click(ClickArgs),
     /// Monitorar mudanças em uma URL ou elemento
     Watch(WatchArgs),
+    /// Capturar screenshot da página como PNG
+    Screenshot(ScreenshotArgs),
     /// Modo interativo REPL para executar múltiplos comandos JS
     Repl(ReplArgs),
 }
 
 /// Executa o comando CLI
 pub async fn run(cli: Cli) -> anyhow::Result<()> {
-    // Se não tem URL, mostra ajuda
+    // Se não tem URL, mostra ajuda (ou usa URL do subcomando screenshot)
     let url = match cli.url_flag.as_ref().or(cli.url.as_ref()) {
         Some(u) => u.clone(),
         None => {
-            println!("FAF BROWSER v{}", env!("CARGO_PKG_VERSION"));
-            println!("Uso: faf <url> [opções]");
-            println!("     faf query 'h1' --url https://site.com");
-            println!("     faf links --url https://site.com");
-            return Ok(());
+            if let Some(Command::Screenshot(args)) = &cli.command {
+                args.url.clone()
+            } else {
+                println!("FAF BROWSER v{}", env!("CARGO_PKG_VERSION"));
+                println!("Uso: faf <url> [opções]");
+                println!("     faf query 'h1' --url https://site.com");
+                println!("     faf links --url https://site.com");
+                return Ok(());
+            }
         }
     };
 
@@ -830,6 +854,20 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 if args.max_checks == 0 || checks < args.max_checks {
                     tokio::time::sleep(std::time::Duration::from_secs(args.interval)).await;
                 }
+            }
+        }
+        Some(Command::Screenshot(args)) => {
+            let config = crate::render::screenshot::ScreenshotConfig {
+                width: args.width,
+                height: args.height,
+            };
+
+            crate::render::screenshot::render_to_image(&doc, &config, &args.output)?;
+
+            if cli.json {
+                println!("{}", serde_json::json!({"screenshot": args.output, "width": args.width, "height": args.height }));
+            } else {
+                println!("📸 Screenshot salvo em: {}", args.output);
             }
         }
         Some(Command::Repl(_args)) => {

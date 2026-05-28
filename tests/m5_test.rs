@@ -572,3 +572,117 @@ async fn test_watch_json_output() {
     let result = run(cli).await;
     assert!(result.is_ok(), "watch --json should succeed: {:?}", result);
 }
+
+// ---------------------------------------------------------------------------
+// T041 — Screenshot via tiny-skia
+// ---------------------------------------------------------------------------
+
+fn start_screenshot_server() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buf = [0u8; 1024];
+        let _ = stream.read(&mut buf);
+        let body = r#"<html><head><style>h1 { color: red; background: #eee; }</style></head>
+            <body><h1>Titulo</h1><p>Paragrafo</p></body></html>"#;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(), body
+        );
+        let _ = stream.write_all(response.as_bytes());
+    });
+    port
+}
+
+#[tokio::test]
+async fn test_screenshot_generated() {
+    let port = start_screenshot_server();
+    let output = format!("/tmp/faf_test_screenshot_{}.png", std::process::id());
+    let cli = Cli::parse_from([
+        "faf",
+        "screenshot",
+        &format!("http://127.0.0.1:{}/", port),
+        "--width", "800",
+        "--output", &output,
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok(), "screenshot should succeed: {:?}", result);
+    assert!(std::path::Path::new(&output).exists(), "PNG deve existir");
+    let metadata = std::fs::metadata(&output).unwrap();
+    assert!(metadata.len() >= 500, "PNG deve ter >= 500 bytes, tinha {}", metadata.len());
+    let _ = std::fs::remove_file(&output);
+}
+
+fn start_screenshot_no_css_server() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buf = [0u8; 1024];
+        let _ = stream.read(&mut buf);
+        let body = r#"<html><body><h1>No CSS</h1><p>Plain text</p></body></html>"#;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(), body
+        );
+        let _ = stream.write_all(response.as_bytes());
+    });
+    port
+}
+
+#[tokio::test]
+async fn test_screenshot_no_css() {
+    let port = start_screenshot_no_css_server();
+    let output = format!("/tmp/faf_test_screenshot_no_css_{}.png", std::process::id());
+    let cli = Cli::parse_from([
+        "faf",
+        "screenshot",
+        &format!("http://127.0.0.1:{}/", port),
+        "--width", "400",
+        "--output", &output,
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok(), "screenshot no-css should succeed: {:?}", result);
+    assert!(std::path::Path::new(&output).exists(), "PNG deve existir");
+    let metadata = std::fs::metadata(&output).unwrap();
+    assert!(metadata.len() >= 500, "PNG deve ter >= 500 bytes, tinha {}", metadata.len());
+    let _ = std::fs::remove_file(&output);
+}
+
+fn start_screenshot_display_none_server() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buf = [0u8; 1024];
+        let _ = stream.read(&mut buf);
+        let body = r#"<html><head><style>.hidden { display: none; }</style></head>
+            <body><h1>Visible</h1><p class="hidden">Hidden</p></body></html>"#;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(), body
+        );
+        let _ = stream.write_all(response.as_bytes());
+    });
+    port
+}
+
+#[tokio::test]
+async fn test_screenshot_display_none() {
+    let port = start_screenshot_display_none_server();
+    let output = format!("/tmp/faf_test_screenshot_hidden_{}.png", std::process::id());
+    let cli = Cli::parse_from([
+        "faf",
+        "screenshot",
+        &format!("http://127.0.0.1:{}/", port),
+        "--width", "400",
+        "--output", &output,
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok(), "screenshot display:none should succeed: {:?}", result);
+    assert!(std::path::Path::new(&output).exists(), "PNG deve existir");
+    let metadata = std::fs::metadata(&output).unwrap();
+    assert!(metadata.len() >= 500, "PNG deve ter >= 500 bytes, tinha {}", metadata.len());
+    let _ = std::fs::remove_file(&output);
+}

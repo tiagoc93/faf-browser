@@ -154,6 +154,22 @@ impl HtmlDocument {
     pub fn scraper_html(&self) -> &scraper::Html {
         &self.inner
     }
+
+    /// Extrai CSS inline de tags `<style>`.
+    pub fn extract_css(&self) -> Option<String> {
+        let selector = scraper::Selector::parse("style").ok()?;
+        let css: String = self
+            .inner
+            .select(&selector)
+            .map(|el| el.text().collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n");
+        if css.trim().is_empty() {
+            None
+        } else {
+            Some(css)
+        }
+    }
 }
 
 #[cfg(test)]
