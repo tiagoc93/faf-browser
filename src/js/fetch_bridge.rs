@@ -2,6 +2,8 @@ use anyhow::{Context as _, Result};
 use rquickjs::{Context, Function};
 use serde_json::json;
 use std::collections::HashMap;
+use std::sync::mpsc;
+use std::thread;
 
 /// Inicializa a API `fetch` no contexto QuickJS usando o HttpClient do Rust.
 pub fn init_fetch(ctx: &Context, client: &crate::http::client::HttpClient) -> Result<()> {
@@ -42,58 +44,71 @@ pub fn init_fetch(ctx: &Context, client: &crate::http::client::HttpClient) -> Re
                     _ => reqwest::Method::GET,
                 };
 
-                let response = crate::js::engine::TIMER_RT.block_on(async {
-                    let mut req = inner_client.request(req_method, &url);
+                // Rodar reqwest numa thread separada para evitar conflito
+                // com o runtime tokio já existente.
+                let ic = inner_client.clone();
+                let u = url.clone();
+                let h = headers.clone();
+                let b = body.clone();
+                let (tx, rx) = mpsc::channel();
 
-                    if let Some(headers_obj) = headers.as_ref().and_then(|v| v.as_object()) {
-                        for (key, value) in headers_obj {
-                            if let Some(val_str) = value.as_str() {
-                                req = req.header(key, val_str);
+                thread::spawn(move || {
+                    let rt = tokio::runtime::Runtime::new().unwrap();
+                    let result = rt.block_on(async {
+                        let mut req = ic.request(req_method, &u);
+
+                        if let Some(headers_obj) = h.as_ref().and_then(|v| v.as_object()) {
+                            for (key, value) in headers_obj {
+                                if let Some(val_str) = value.as_str() {
+                                    req = req.header(key, val_str);
+                                }
                             }
                         }
-                    }
 
-                    if let Some(body_str) = body {
-                        req = req.body(body_str);
-                    }
+                        if let Some(body_str) = b {
+                            req = req.body(body_str);
+                        }
 
-                    req.send().await
+                        req.send().await
+                    });
+
+                    let json_result = match result {
+                        Ok(resp) => {
+                            let status = resp.status().as_u16();
+                            let mut headers_map = HashMap::new();
+                            for (key, value) in resp.headers() {
+                                if let Ok(val_str) = value.to_str() {
+                                    headers_map.insert(key.to_string(), val_str.to_string());
+                                }
+                            }
+
+                            match rt.block_on(async { resp.text().await }) {
+                                Ok(body_text) => json!({
+                                    "status": status,
+                                    "headers": headers_map,
+                                    "body": body_text,
+                                })
+                                .to_string(),
+                                Err(e) => json!({
+                                    "status": status,
+                                    "headers": headers_map,
+                                    "error": format!("Failed to read body: {}", e),
+                                })
+                                .to_string(),
+                            }
+                        }
+                        Err(e) => json!({
+                            "status": 0,
+                            "error": e.to_string(),
+                        })
+                        .to_string(),
+                    };
+                    let _ = tx.send(json_result);
                 });
 
-                match response {
-                    Ok(resp) => {
-                        let status = resp.status().as_u16();
-                        let mut headers_map = HashMap::new();
-                        for (key, value) in resp.headers() {
-                            if let Ok(val_str) = value.to_str() {
-                                headers_map.insert(key.to_string(), val_str.to_string());
-                            }
-                        }
-
-                        let body =
-                            crate::js::engine::TIMER_RT.block_on(async { resp.text().await });
-
-                        match body {
-                            Ok(body_text) => json!({
-                                "status": status,
-                                "headers": headers_map,
-                                "body": body_text,
-                            })
-                            .to_string(),
-                            Err(e) => json!({
-                                "status": status,
-                                "headers": headers_map,
-                                "error": format!("Failed to read body: {}", e),
-                            })
-                            .to_string(),
-                        }
-                    }
-                    Err(e) => json!({
-                        "status": 0,
-                        "error": e.to_string(),
-                    })
-                    .to_string(),
-                }
+                rx.recv().unwrap_or_else(|_| {
+                    json!({"status": 0, "error": "Fetch thread disconnected"}).to_string()
+                })
             },
         )
         .context("failed to create _faf_fetch function")?;

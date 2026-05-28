@@ -150,14 +150,12 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
     // Se --js ou --js-file foi passado, executar JS
     let user_js = cli.js_script.as_ref().or(cli.js_file.as_ref());
     if let Some(js_input) = user_js {
-        let js_code = if cli.js_file.is_some()
-            || !(js_input.contains('(') || js_input.contains(';') || js_input.contains('\n'))
-        {
-            // Arquivo JS (--js-file sempre é arquivo; --js sem caracteres de código tenta arquivo)
+        let js_code = if cli.js_file.is_some() {
+            // --js-file sempre lê de arquivo
             std::fs::read_to_string(js_input)
                 .map_err(|e| anyhow::anyhow!("Falha ao ler arquivo JS '{}': {}", js_input, e))?
         } else {
-            // Código JS inline
+            // --js é sempre código inline
             js_input.clone()
         };
 
@@ -169,7 +167,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         // Executar scripts da página (se não --no-scripts)
         if !cli.no_scripts {
             let base_url = url::Url::parse(&url)?;
-            rt.execute_page_scripts(&doc, &base_url, &client)?;
+            rt.execute_page_scripts(&doc, &base_url, &client).await?;
         }
 
         // Executar JS do usuário

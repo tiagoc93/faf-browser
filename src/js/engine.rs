@@ -2,14 +2,12 @@ use anyhow::{Context as _, Result};
 use rquickjs::{Context, Runtime};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::Duration;
 
 use crate::dom::HtmlDocument;
 use crate::http::client::HttpClient;
-
-pub(crate) static TIMER_RT: LazyLock<tokio::runtime::Runtime> =
-    LazyLock::new(|| tokio::runtime::Runtime::new().expect("failed to create timer runtime"));
 
 pub struct JsRuntime {
     #[allow(dead_code)]
@@ -148,8 +146,12 @@ impl JsRuntime {
                         timers.lock().unwrap().insert(id, false);
                         let timers = timers.clone();
                         let context = context.clone();
-                        TIMER_RT.spawn(async move {
-                            tokio::time::sleep(Duration::from_millis(ms)).await;
+                        thread::spawn(move || {
+                            let rt = tokio::runtime::Runtime::new()
+                                .expect("failed to create timer runtime");
+                            rt.block_on(async {
+                                tokio::time::sleep(Duration::from_millis(ms)).await;
+                            });
                             let cancelled = timers.lock().unwrap().get(&id).copied().unwrap_or(true);
                             if cancelled {
                                 return;
@@ -190,19 +192,23 @@ impl JsRuntime {
                         timers.lock().unwrap().insert(id, false);
                         let timers = timers.clone();
                         let context = context.clone();
-                        TIMER_RT.spawn(async move {
-                            loop {
-                                tokio::time::sleep(Duration::from_millis(ms)).await;
-                                let cancelled =
-                                    timers.lock().unwrap().get(&id).copied().unwrap_or(true);
-                                if cancelled {
-                                    break;
+                        thread::spawn(move || {
+                            let rt = tokio::runtime::Runtime::new()
+                                .expect("failed to create timer runtime");
+                            rt.block_on(async {
+                                loop {
+                                    tokio::time::sleep(Duration::from_millis(ms)).await;
+                                    let cancelled =
+                                        timers.lock().unwrap().get(&id).copied().unwrap_or(true);
+                                    if cancelled {
+                                        break;
+                                    }
+                                    let _ = context.with(|ctx| {
+                                        ctx.eval::<(), _>(code.as_str())?;
+                                        Ok::<_, rquickjs::Error>(())
+                                    });
                                 }
-                                let _ = context.with(|ctx| {
-                                    ctx.eval::<(), _>(code.as_str())?;
-                                    Ok::<_, rquickjs::Error>(())
-                                });
-                            }
+                            });
                         });
                         id
                     },
@@ -399,7 +405,7 @@ impl JsRuntime {
     /// Scripts inline são executados diretamente; scripts externos são baixados
     /// e depois executados. Erros são logados como warning e não interrompem
     /// o processamento dos demais scripts.
-    pub fn execute_page_scripts(
+    pub async fn execute_page_scripts(
         &mut self,
         doc: &HtmlDocument,
         base_url: &url::Url,
@@ -427,7 +433,7 @@ impl JsRuntime {
                     }
                 };
 
-                let script_body = match TIMER_RT.block_on(async { client.get(&resolved_url).await })
+                let script_body = match client.get(&resolved_url).await
                 {
                     Ok(body) => body,
                     Err(e) => {
@@ -856,8 +862,8 @@ mod tests {
         // Deve lançar erro de conexão recusada, não erro de sintaxe
         assert!(result.is_err());
     }
-    #[test]
-    fn test_execute_page_scripts_inline() {
+    #[tokio::test]
+    async fn test_execute_page_scripts_inline() {
         let html =
             r#"<html><head><script>document.title = 'JS OK'</script></head><body></body></html>"#;
         let doc = crate::dom::HtmlDocument::parse(html);
@@ -868,14 +874,14 @@ mod tests {
         let client = crate::http::client::HttpClient::new(config).unwrap();
         let base_url = url::Url::parse("https://example.com").unwrap();
 
-        rt.execute_page_scripts(&doc, &base_url, &client).unwrap();
+        rt.execute_page_scripts(&doc, &base_url, &client).await.unwrap();
 
         let title = rt.eval("document.title").unwrap();
         assert_eq!(title, "JS OK");
     }
 
-    #[test]
-    fn test_execute_page_scripts_error_continues() {
+    #[tokio::test]
+    async fn test_execute_page_scripts_error_continues() {
         let html = r#"<html><head>
             <script>undefined.x</script>
             <script>document.title = 'RECOVERY'</script>
@@ -888,7 +894,7 @@ mod tests {
         let client = crate::http::client::HttpClient::new(config).unwrap();
         let base_url = url::Url::parse("https://example.com").unwrap();
 
-        rt.execute_page_scripts(&doc, &base_url, &client).unwrap();
+        rt.execute_page_scripts(&doc, &base_url, &client).await.unwrap();
 
         let title = rt.eval("document.title").unwrap();
         assert_eq!(title, "RECOVERY");

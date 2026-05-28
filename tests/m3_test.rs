@@ -36,8 +36,8 @@ fn test_dom_bridge() {
 // ---------------------------------------------------------------------------
 // 3. Script inline
 // ---------------------------------------------------------------------------
-#[test]
-fn test_script_inline() {
+#[tokio::test]
+async fn test_script_inline() {
     let html =
         r#"<html><head><script>document.title = 'JS OK'</script></head><body></body></html>"#;
     let doc = HtmlDocument::parse(html);
@@ -48,7 +48,7 @@ fn test_script_inline() {
     let config = faf_browser::utils::config::Config::default();
     let client = faf_browser::http::client::HttpClient::new(config).unwrap();
 
-    rt.execute_page_scripts(&doc, &base_url, &client).unwrap();
+    rt.execute_page_scripts(&doc, &base_url, &client).await.unwrap();
 
     let title = rt.eval("document.title").unwrap();
     assert_eq!(title, "JS OK");
