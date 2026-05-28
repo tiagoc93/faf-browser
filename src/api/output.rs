@@ -262,8 +262,7 @@ fn format_csv_value(val: &Value) -> String {
         Value::String(s) => escape_csv(s),
         Value::Null => String::new(),
         Value::Array(arr) => escape_csv(
-            &arr
-                .iter()
+            &arr.iter()
                 .map(|v| match v {
                     Value::String(s) => s.clone(),
                     other => other.to_string(),

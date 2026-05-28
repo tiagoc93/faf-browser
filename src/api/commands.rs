@@ -48,6 +48,10 @@ pub struct Cli {
     #[arg(long = "format", global = true, default_value = "text")]
     pub format: String,
 
+    /// Filtros de query no formato campo~=valor, campo==valor, etc.
+    #[arg(long = "filter", global = true)]
+    pub filter: Option<Vec<String>>,
+
     /// Comando: links, images, metadata, query
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -146,6 +150,16 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         }
         Some(Command::Query { selector }) => {
             let results = doc.query(selector)?;
+            let results = if let Some(filters) = &cli.filter {
+                let parsed: Vec<crate::api::filter::QueryFilter> = filters
+                    .iter()
+                    .map(|f| crate::api::filter::QueryFilter::parse(f))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| anyhow::anyhow!("Filtro inválido: {}", e))?;
+                crate::api::filter::apply_filters(results, &parsed)
+            } else {
+                results
+            };
             let css_input = if cli.no_page_css || cli.css.is_some() {
                 load_css_input(&cli.css)?
             } else {
@@ -212,7 +226,11 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                             if let Some(s) = style {
                                 println!(
                                     "      🎨 color: {} | bg: {} | font-size: {} | font-family: {} | display: {}",
-                                    s.color, s.background_color, s.font_size, s.font_family, s.display
+                                    s.color,
+                                    s.background_color,
+                                    s.font_size,
+                                    s.font_family,
+                                    s.display
                                 );
                             }
                         }

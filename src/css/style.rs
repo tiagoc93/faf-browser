@@ -58,12 +58,8 @@ pub fn compute_styles(
     stylesheet: &Stylesheet,
 ) -> Vec<(ElementMatch, ComputedStyle)> {
     // element_key -> list of (rule, specificity, rule_index_in_stylesheet)
-    let mut element_rules: HashMap<
-        ElementKey,
-        Vec<(&Rule, u32, usize)>,
-    > = HashMap::new();
-    let mut element_repr: HashMap<ElementKey, ElementMatch> =
-        HashMap::new();
+    let mut element_rules: HashMap<ElementKey, Vec<(&Rule, u32, usize)>> = HashMap::new();
+    let mut element_repr: HashMap<ElementKey, ElementMatch> = HashMap::new();
 
     for (rule_idx, rule) in stylesheet.rules.iter().enumerate() {
         match select_elements(doc, &rule.selectors) {

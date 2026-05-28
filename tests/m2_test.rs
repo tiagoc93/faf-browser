@@ -1,9 +1,9 @@
-use faf_browser::css::color::{parse_color, Color};
+use faf_browser::css::color::{Color, parse_color};
 use faf_browser::css::font::parse_font_family;
 use faf_browser::css::layout::{compute_box_model, css_to_pixels, outer_height, outer_width};
 use faf_browser::css::parser::parse_css;
 use faf_browser::css::selector::select_elements;
-use faf_browser::css::style::{compute_styles, ComputedStyle};
+use faf_browser::css::style::{ComputedStyle, compute_styles};
 use faf_browser::dom::HtmlDocument;
 
 // ---------------------------------------------------------------------------
@@ -185,31 +185,95 @@ fn test_css_to_pixels_units() {
 #[test]
 fn test_color_parsing_named() {
     let c = parse_color("red").unwrap();
-    assert_eq!(c, Color { r: 255, g: 0, b: 0, a: 1.0 });
+    assert_eq!(
+        c,
+        Color {
+            r: 255,
+            g: 0,
+            b: 0,
+            a: 1.0
+        }
+    );
 
     let c = parse_color("blue").unwrap();
-    assert_eq!(c, Color { r: 0, g: 0, b: 255, a: 1.0 });
+    assert_eq!(
+        c,
+        Color {
+            r: 0,
+            g: 0,
+            b: 255,
+            a: 1.0
+        }
+    );
 
     let c = parse_color("white").unwrap();
-    assert_eq!(c, Color { r: 255, g: 255, b: 255, a: 1.0 });
+    assert_eq!(
+        c,
+        Color {
+            r: 255,
+            g: 255,
+            b: 255,
+            a: 1.0
+        }
+    );
 
     let c = parse_color("black").unwrap();
-    assert_eq!(c, Color { r: 0, g: 0, b: 0, a: 1.0 });
+    assert_eq!(
+        c,
+        Color {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 1.0
+        }
+    );
 }
 
 #[test]
 fn test_color_parsing_hex() {
     let c = parse_color("#ff0000").unwrap();
-    assert_eq!(c, Color { r: 255, g: 0, b: 0, a: 1.0 });
+    assert_eq!(
+        c,
+        Color {
+            r: 255,
+            g: 0,
+            b: 0,
+            a: 1.0
+        }
+    );
 
     let c = parse_color("#f00").unwrap();
-    assert_eq!(c, Color { r: 255, g: 0, b: 0, a: 1.0 });
+    assert_eq!(
+        c,
+        Color {
+            r: 255,
+            g: 0,
+            b: 0,
+            a: 1.0
+        }
+    );
 
     let c = parse_color("#ffffff").unwrap();
-    assert_eq!(c, Color { r: 255, g: 255, b: 255, a: 1.0 });
+    assert_eq!(
+        c,
+        Color {
+            r: 255,
+            g: 255,
+            b: 255,
+            a: 1.0
+        }
+    );
 
     let c = parse_color("#000000").unwrap();
-    assert_eq!(c, Color { r: 0, g: 0, b: 0, a: 1.0 });
+    assert_eq!(
+        c,
+        Color {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 1.0
+        }
+    );
 }
 
 #[test]
@@ -224,10 +288,26 @@ fn test_color_parsing_hex_alpha() {
 #[test]
 fn test_color_parsing_rgb() {
     let c = parse_color("rgb(255, 128, 64)").unwrap();
-    assert_eq!(c, Color { r: 255, g: 128, b: 64, a: 1.0 });
+    assert_eq!(
+        c,
+        Color {
+            r: 255,
+            g: 128,
+            b: 64,
+            a: 1.0
+        }
+    );
 
     let c = parse_color("rgb(0,0,0)").unwrap();
-    assert_eq!(c, Color { r: 0, g: 0, b: 0, a: 1.0 });
+    assert_eq!(
+        c,
+        Color {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 1.0
+        }
+    );
 }
 
 #[test]
@@ -242,7 +322,15 @@ fn test_color_parsing_rgba() {
 #[test]
 fn test_color_parsing_transparent() {
     let c = parse_color("transparent").unwrap();
-    assert_eq!(c, Color { r: 0, g: 0, b: 0, a: 0.0 });
+    assert_eq!(
+        c,
+        Color {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 0.0
+        }
+    );
 }
 
 #[test]

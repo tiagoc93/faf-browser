@@ -61,25 +61,120 @@ pub fn parse_color(value: &str) -> Option<Color> {
 
 fn parse_named_color(name: &str) -> Option<Color> {
     match name {
-        "red" => Some(Color { r: 255, g: 0, b: 0, a: 1.0 }),
-        "blue" => Some(Color { r: 0, g: 0, b: 255, a: 1.0 }),
-        "green" => Some(Color { r: 0, g: 128, b: 0, a: 1.0 }),
-        "black" => Some(Color { r: 0, g: 0, b: 0, a: 1.0 }),
-        "white" => Some(Color { r: 255, g: 255, b: 255, a: 1.0 }),
-        "gray" => Some(Color { r: 128, g: 128, b: 128, a: 1.0 }),
-        "yellow" => Some(Color { r: 255, g: 255, b: 0, a: 1.0 }),
-        "orange" => Some(Color { r: 255, g: 165, b: 0, a: 1.0 }),
-        "purple" => Some(Color { r: 128, g: 0, b: 128, a: 1.0 }),
-        "pink" => Some(Color { r: 255, g: 192, b: 203, a: 1.0 }),
-        "brown" => Some(Color { r: 165, g: 42, b: 42, a: 1.0 }),
-        "navy" => Some(Color { r: 0, g: 0, b: 128, a: 1.0 }),
-        "teal" => Some(Color { r: 0, g: 128, b: 128, a: 1.0 }),
-        "olive" => Some(Color { r: 128, g: 128, b: 0, a: 1.0 }),
-        "maroon" => Some(Color { r: 128, g: 0, b: 0, a: 1.0 }),
-        "aqua" => Some(Color { r: 0, g: 255, b: 255, a: 1.0 }),
-        "fuchsia" => Some(Color { r: 255, g: 0, b: 255, a: 1.0 }),
-        "lime" => Some(Color { r: 0, g: 255, b: 0, a: 1.0 }),
-        "silver" => Some(Color { r: 192, g: 192, b: 192, a: 1.0 }),
+        "red" => Some(Color {
+            r: 255,
+            g: 0,
+            b: 0,
+            a: 1.0,
+        }),
+        "blue" => Some(Color {
+            r: 0,
+            g: 0,
+            b: 255,
+            a: 1.0,
+        }),
+        "green" => Some(Color {
+            r: 0,
+            g: 128,
+            b: 0,
+            a: 1.0,
+        }),
+        "black" => Some(Color {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 1.0,
+        }),
+        "white" => Some(Color {
+            r: 255,
+            g: 255,
+            b: 255,
+            a: 1.0,
+        }),
+        "gray" => Some(Color {
+            r: 128,
+            g: 128,
+            b: 128,
+            a: 1.0,
+        }),
+        "yellow" => Some(Color {
+            r: 255,
+            g: 255,
+            b: 0,
+            a: 1.0,
+        }),
+        "orange" => Some(Color {
+            r: 255,
+            g: 165,
+            b: 0,
+            a: 1.0,
+        }),
+        "purple" => Some(Color {
+            r: 128,
+            g: 0,
+            b: 128,
+            a: 1.0,
+        }),
+        "pink" => Some(Color {
+            r: 255,
+            g: 192,
+            b: 203,
+            a: 1.0,
+        }),
+        "brown" => Some(Color {
+            r: 165,
+            g: 42,
+            b: 42,
+            a: 1.0,
+        }),
+        "navy" => Some(Color {
+            r: 0,
+            g: 0,
+            b: 128,
+            a: 1.0,
+        }),
+        "teal" => Some(Color {
+            r: 0,
+            g: 128,
+            b: 128,
+            a: 1.0,
+        }),
+        "olive" => Some(Color {
+            r: 128,
+            g: 128,
+            b: 0,
+            a: 1.0,
+        }),
+        "maroon" => Some(Color {
+            r: 128,
+            g: 0,
+            b: 0,
+            a: 1.0,
+        }),
+        "aqua" => Some(Color {
+            r: 0,
+            g: 255,
+            b: 255,
+            a: 1.0,
+        }),
+        "fuchsia" => Some(Color {
+            r: 255,
+            g: 0,
+            b: 255,
+            a: 1.0,
+        }),
+        "lime" => Some(Color {
+            r: 0,
+            g: 255,
+            b: 0,
+            a: 1.0,
+        }),
+        "silver" => Some(Color {
+            r: 192,
+            g: 192,
+            b: 192,
+            a: 1.0,
+        }),
         _ => None,
     }
 }
@@ -185,10 +280,7 @@ pub fn color_to_css(color: &Color) -> String {
     if (color.a - 1.0).abs() < f32::EPSILON {
         format!("rgb({}, {}, {})", color.r, color.g, color.b)
     } else {
-        format!(
-            "rgba({}, {}, {}, {})",
-            color.r, color.g, color.b, color.a
-        )
+        format!("rgba({}, {}, {}, {})", color.r, color.g, color.b, color.a)
     }
 }
 
@@ -196,9 +288,8 @@ pub fn color_to_css(color: &Color) -> String {
 ///
 /// Formula: `0.299*r + 0.587*g + 0.114*b > 127`
 pub fn is_light(color: &Color) -> bool {
-    let luminance = 0.299 * f32::from(color.r)
-        + 0.587 * f32::from(color.g)
-        + 0.114 * f32::from(color.b);
+    let luminance =
+        0.299 * f32::from(color.r) + 0.587 * f32::from(color.g) + 0.114 * f32::from(color.b);
     luminance > 127.0
 }
 
@@ -217,22 +308,14 @@ pub fn blend(foreground: &Color, background: &Color) -> Color {
         };
     }
 
-    let r = ((f32::from(foreground.r) * fa + f32::from(background.r) * ba * (1.0 - fa))
-        / out_a)
+    let r = ((f32::from(foreground.r) * fa + f32::from(background.r) * ba * (1.0 - fa)) / out_a)
         .clamp(0.0, 255.0) as u8;
-    let g = ((f32::from(foreground.g) * fa + f32::from(background.g) * ba * (1.0 - fa))
-        / out_a)
+    let g = ((f32::from(foreground.g) * fa + f32::from(background.g) * ba * (1.0 - fa)) / out_a)
         .clamp(0.0, 255.0) as u8;
-    let b = ((f32::from(foreground.b) * fa + f32::from(background.b) * ba * (1.0 - fa))
-        / out_a)
+    let b = ((f32::from(foreground.b) * fa + f32::from(background.b) * ba * (1.0 - fa)) / out_a)
         .clamp(0.0, 255.0) as u8;
 
-    Color {
-        r,
-        g,
-        b,
-        a: out_a,
-    }
+    Color { r, g, b, a: out_a }
 }
 
 #[cfg(test)]
@@ -243,25 +326,57 @@ mod tests {
     #[test]
     fn test_named_red() {
         let c = parse_color("red").unwrap();
-        assert_eq!(c, Color { r: 255, g: 0, b: 0, a: 1.0 });
+        assert_eq!(
+            c,
+            Color {
+                r: 255,
+                g: 0,
+                b: 0,
+                a: 1.0
+            }
+        );
     }
 
     #[test]
     fn test_named_blue() {
         let c = parse_color("blue").unwrap();
-        assert_eq!(c, Color { r: 0, g: 0, b: 255, a: 1.0 });
+        assert_eq!(
+            c,
+            Color {
+                r: 0,
+                g: 0,
+                b: 255,
+                a: 1.0
+            }
+        );
     }
 
     #[test]
     fn test_named_black() {
         let c = parse_color("black").unwrap();
-        assert_eq!(c, Color { r: 0, g: 0, b: 0, a: 1.0 });
+        assert_eq!(
+            c,
+            Color {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 1.0
+            }
+        );
     }
 
     #[test]
     fn test_named_white() {
         let c = parse_color("white").unwrap();
-        assert_eq!(c, Color { r: 255, g: 255, b: 255, a: 1.0 });
+        assert_eq!(
+            c,
+            Color {
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 1.0
+            }
+        );
     }
 
     #[test]
@@ -289,17 +404,7 @@ mod tests {
         ];
         for (name, (r, g, b)) in expected {
             let c = parse_color(name).unwrap();
-            assert_eq!(
-                c,
-                Color {
-                    r,
-                    g,
-                    b,
-                    a: 1.0
-                },
-                "failed for {}",
-                name
-            );
+            assert_eq!(c, Color { r, g, b, a: 1.0 }, "failed for {}", name);
         }
     }
 
@@ -307,13 +412,29 @@ mod tests {
     #[test]
     fn test_hex_six() {
         let c = parse_color("#ff0000").unwrap();
-        assert_eq!(c, Color { r: 255, g: 0, b: 0, a: 1.0 });
+        assert_eq!(
+            c,
+            Color {
+                r: 255,
+                g: 0,
+                b: 0,
+                a: 1.0
+            }
+        );
     }
 
     #[test]
     fn test_hex_three() {
         let c = parse_color("#f00").unwrap();
-        assert_eq!(c, Color { r: 255, g: 0, b: 0, a: 1.0 });
+        assert_eq!(
+            c,
+            Color {
+                r: 255,
+                g: 0,
+                b: 0,
+                a: 1.0
+            }
+        );
     }
 
     #[test]
@@ -337,26 +458,58 @@ mod tests {
     #[test]
     fn test_hex_white() {
         let c = parse_color("#ffffff").unwrap();
-        assert_eq!(c, Color { r: 255, g: 255, b: 255, a: 1.0 });
+        assert_eq!(
+            c,
+            Color {
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 1.0
+            }
+        );
     }
 
     #[test]
     fn test_hex_black() {
         let c = parse_color("#000000").unwrap();
-        assert_eq!(c, Color { r: 0, g: 0, b: 0, a: 1.0 });
+        assert_eq!(
+            c,
+            Color {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 1.0
+            }
+        );
     }
 
     // ── parse_color: rgb/rgba ─────────────────────────────────────────
     #[test]
     fn test_rgb_integers() {
         let c = parse_color("rgb(255, 128, 64)").unwrap();
-        assert_eq!(c, Color { r: 255, g: 128, b: 64, a: 1.0 });
+        assert_eq!(
+            c,
+            Color {
+                r: 255,
+                g: 128,
+                b: 64,
+                a: 1.0
+            }
+        );
     }
 
     #[test]
     fn test_rgb_no_spaces() {
         let c = parse_color("rgb(0,0,0)").unwrap();
-        assert_eq!(c, Color { r: 0, g: 0, b: 0, a: 1.0 });
+        assert_eq!(
+            c,
+            Color {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 1.0
+            }
+        );
     }
 
     #[test]
@@ -387,7 +540,15 @@ mod tests {
     #[test]
     fn test_transparent() {
         let c = parse_color("transparent").unwrap();
-        assert_eq!(c, Color { r: 0, g: 0, b: 0, a: 0.0 });
+        assert_eq!(
+            c,
+            Color {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0.0
+            }
+        );
     }
 
     #[test]
@@ -410,43 +571,83 @@ mod tests {
     // ── color_to_css ──────────────────────────────────────────────────
     #[test]
     fn test_color_to_css_opaque() {
-        let c = Color { r: 255, g: 0, b: 0, a: 1.0 };
+        let c = Color {
+            r: 255,
+            g: 0,
+            b: 0,
+            a: 1.0,
+        };
         assert_eq!(color_to_css(&c), "rgb(255, 0, 0)");
     }
 
     #[test]
     fn test_color_to_css_alpha() {
-        let c = Color { r: 255, g: 0, b: 0, a: 0.5 };
+        let c = Color {
+            r: 255,
+            g: 0,
+            b: 0,
+            a: 0.5,
+        };
         assert_eq!(color_to_css(&c), "rgba(255, 0, 0, 0.5)");
     }
 
     // ── is_light ──────────────────────────────────────────────────────
     #[test]
     fn test_is_light_white() {
-        assert!(is_light(&Color { r: 255, g: 255, b: 255, a: 1.0 }));
+        assert!(is_light(&Color {
+            r: 255,
+            g: 255,
+            b: 255,
+            a: 1.0
+        }));
     }
 
     #[test]
     fn test_is_light_black() {
-        assert!(!is_light(&Color { r: 0, g: 0, b: 0, a: 1.0 }));
+        assert!(!is_light(&Color {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 1.0
+        }));
     }
 
     #[test]
     fn test_is_light_gray() {
         // 128,128,128 → luminance = 128, which IS > 127
-        assert!(is_light(&Color { r: 128, g: 128, b: 128, a: 1.0 }));
+        assert!(is_light(&Color {
+            r: 128,
+            g: 128,
+            b: 128,
+            a: 1.0
+        }));
     }
 
     #[test]
     fn test_is_light_yellow() {
-        assert!(is_light(&Color { r: 255, g: 255, b: 0, a: 1.0 }));
+        assert!(is_light(&Color {
+            r: 255,
+            g: 255,
+            b: 0,
+            a: 1.0
+        }));
     }
 
     // ── blend ─────────────────────────────────────────────────────────
     #[test]
     fn test_blend_opaque_over_opaque() {
-        let fg = Color { r: 255, g: 0, b: 0, a: 1.0 };
-        let bg = Color { r: 0, g: 0, b: 255, a: 1.0 };
+        let fg = Color {
+            r: 255,
+            g: 0,
+            b: 0,
+            a: 1.0,
+        };
+        let bg = Color {
+            r: 0,
+            g: 0,
+            b: 255,
+            a: 1.0,
+        };
         let blended = blend(&fg, &bg);
         assert_eq!(blended.r, 255);
         assert_eq!(blended.g, 0);
@@ -456,8 +657,18 @@ mod tests {
 
     #[test]
     fn test_blend_half_over_blue() {
-        let fg = Color { r: 255, g: 0, b: 0, a: 0.5 };
-        let bg = Color { r: 0, g: 0, b: 255, a: 1.0 };
+        let fg = Color {
+            r: 255,
+            g: 0,
+            b: 0,
+            a: 0.5,
+        };
+        let bg = Color {
+            r: 0,
+            g: 0,
+            b: 255,
+            a: 1.0,
+        };
         let blended = blend(&fg, &bg);
         assert_eq!(blended.r, 127);
         assert_eq!(blended.g, 0);
@@ -466,8 +677,18 @@ mod tests {
 
     #[test]
     fn test_blend_transparent_over_opaque() {
-        let fg = Color { r: 255, g: 0, b: 0, a: 0.0 };
-        let bg = Color { r: 0, g: 255, b: 0, a: 1.0 };
+        let fg = Color {
+            r: 255,
+            g: 0,
+            b: 0,
+            a: 0.0,
+        };
+        let bg = Color {
+            r: 0,
+            g: 255,
+            b: 0,
+            a: 1.0,
+        };
         let blended = blend(&fg, &bg);
         assert_eq!(blended.r, 0);
         assert_eq!(blended.g, 255);
@@ -476,8 +697,18 @@ mod tests {
 
     #[test]
     fn test_blend_over_transparent() {
-        let fg = Color { r: 255, g: 0, b: 0, a: 0.5 };
-        let bg = Color { r: 0, g: 0, b: 0, a: 0.0 };
+        let fg = Color {
+            r: 255,
+            g: 0,
+            b: 0,
+            a: 0.5,
+        };
+        let bg = Color {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 0.0,
+        };
         let blended = blend(&fg, &bg);
         assert_eq!(blended.r, 255);
         assert_eq!(blended.g, 0);
@@ -487,8 +718,18 @@ mod tests {
 
     #[test]
     fn test_blend_both_transparent() {
-        let fg = Color { r: 255, g: 0, b: 0, a: 0.0 };
-        let bg = Color { r: 0, g: 0, b: 255, a: 0.0 };
+        let fg = Color {
+            r: 255,
+            g: 0,
+            b: 0,
+            a: 0.0,
+        };
+        let bg = Color {
+            r: 0,
+            g: 0,
+            b: 255,
+            a: 0.0,
+        };
         let blended = blend(&fg, &bg);
         assert_eq!(blended.a, 0.0);
     }
