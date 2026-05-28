@@ -246,7 +246,8 @@ pub async fn extract_page_stylesheets(
                     }
                 };
                 match client.get(&resolved_url).await {
-                    Ok(css_text) => {
+                    Ok(resp) => {
+                        let css_text = resp.body;
                         if !css_text.trim().is_empty() {
                             css_sources.push(css_text);
                         }

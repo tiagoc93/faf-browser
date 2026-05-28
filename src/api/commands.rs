@@ -73,6 +73,14 @@ pub struct Cli {
     #[arg(long = "retry-delay", global = true, default_value = "1000")]
     pub retry_delay: u64,
 
+    /// Exibir status HTTP da resposta
+    #[arg(long = "show-status", global = true)]
+    pub show_status: bool,
+
+    /// Exibir headers HTTP da resposta
+    #[arg(long = "show-headers", global = true)]
+    pub show_headers: bool,
+
     /// Comando: links, images, metadata, query
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -152,7 +160,18 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
     };
 
     let client = crate::http::client::HttpClient::new(config)?;
-    let html = client.get(&url).await?;
+    let resp = client.get(&url).await?;
+    let html = resp.body.clone();
+
+    // Exibir status e headers se solicitado
+    if cli.show_status {
+        println!("📋 Status: {} {}", resp.status, resp.status_text);
+    }
+    if cli.show_headers {
+        for (key, value) in &resp.headers {
+            println!("  {}: {}", key, value);
+        }
+    }
 
     // Parsear HTML
     let doc = crate::dom::HtmlDocument::parse(&html);
@@ -512,7 +531,21 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             // Extração completa da página
             let output = crate::api::output::extract_page(&url, &doc);
             if format == "json" {
-                println!("{}", serde_json::to_string_pretty(&output)?);
+                let mut json_output = serde_json::to_value(&output)?;
+                if let Some(map) = json_output.as_object_mut() {
+                    if cli.show_status {
+                        map.insert("status".to_string(), serde_json::json!(resp.status));
+                    }
+                    if cli.show_headers {
+                        let headers: serde_json::Map<String, serde_json::Value> = resp
+                            .headers
+                            .iter()
+                            .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+                            .collect();
+                        map.insert("headers".to_string(), serde_json::Value::Object(headers));
+                    }
+                }
+                println!("{}", serde_json::to_string_pretty(&json_output)?);
             } else {
                 println!("📄 Página: {}", url);
                 println!(
@@ -572,7 +605,8 @@ async fn follow_page(
     no_page_css: bool,
     get_fields: &Option<Vec<String>>,
 ) -> anyhow::Result<crate::api::output::FollowPageResult> {
-    let html = client.get(url).await?;
+    let resp = client.get(url).await?;
+    let html = resp.body;
     let doc = crate::dom::HtmlDocument::parse(&html);
 
     let title = doc.title();

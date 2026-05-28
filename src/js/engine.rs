@@ -435,7 +435,7 @@ impl JsRuntime {
 
                 let script_body = match client.get(&resolved_url).await
                 {
-                    Ok(body) => body,
+                    Ok(resp) => resp.body,
                     Err(e) => {
                         log::warn!("Falha ao baixar script externo ({}): {}", resolved_url, e);
                         continue;
