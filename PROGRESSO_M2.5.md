@@ -8,7 +8,7 @@
 | 2 | Q02 + Q04 | ✅ Concluído | feat: M2.5 — Q02 --get e Q04 --format csv\|jsonl |
 | 3 | P04 | ✅ Concluído | 73aa182 |
 | 4 | Q01 | ✅ Concluído | 193398d |
-| 5 | Q03 | ⏳ Pendente | |
+| 5 | Q03 | ✅ Concluído | d5a93a5 |
 
 ## Tasks
 
@@ -20,5 +20,5 @@
 | P04 | Parse CSS automático da página | parser.rs, commands.rs | ✅ Feito |
 | Q01 | `--filter` para query | filter.rs (novo), commands.rs | ✅ Feito |
 | Q02 | `--get` para extrair atributos | commands.rs, output.rs | ✅ Feito |
-| Q03 | Subcomando `follow` | commands.rs | 📝 Pendente |
+| Q03 | Subcomando `follow` | commands.rs | ✅ Feito |
 | Q04 | `--format csv\|jsonl` | commands.rs, output.rs, Cargo.toml | ✅ Feito |
