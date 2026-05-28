@@ -2,7 +2,7 @@ use crate::http::{cache, cookies};
 use crate::utils::config::Config;
 use reqwest::Client;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// Resposta de uma requisição HTTP
 #[derive(Debug, Clone)]
@@ -28,7 +28,7 @@ fn cache_entry_to_response(entry: &cache::CacheEntry) -> FetchResponse {
 pub struct HttpClient {
     client: Client,
     config: Config,
-    cookie_jar: Option<Arc<Mutex<Vec<cookies::NetscapeCookie>>>>,
+    cookie_store: Option<Arc<cookies::NetscapeCookieStore>>,
 }
 
 impl HttpClient {
@@ -49,28 +49,28 @@ impl HttpClient {
             builder = builder.proxy(proxy);
         }
 
-        // Não usamos cookie_store(true) — gerenciamos cookies manualmente
-        // para permitir persistência em formato Netscape.
-        let client = builder.build()?;
-
-        let cookie_jar = if config.cookies_path.is_some() || config.cookies_jar_path.is_some() {
-            let jar = if let Some(ref path) = config.cookies_path {
-                cookies::load_netscape_cookies(path).unwrap_or_else(|e| {
-                    log::warn!("Falha ao carregar cookies de {}: {}", path, e);
-                    Vec::new()
-                })
-            } else {
-                Vec::new()
-            };
-            Some(Arc::new(Mutex::new(jar)))
+        let cookie_store = if config.cookies_path.is_some() || config.cookies_jar_path.is_some() {
+            let store = cookies::NetscapeCookieStore::new();
+            if let Some(ref path) = config.cookies_path
+                && let Err(e) = store.load_from_file(path)
+            {
+                log::warn!("Falha ao carregar cookies de {}: {}", path, e);
+            }
+            Some(Arc::new(store))
         } else {
             None
         };
 
+        if let Some(ref store) = cookie_store {
+            builder = builder.cookie_provider(store.clone());
+        }
+
+        let client = builder.build()?;
+
         Ok(Self {
             client,
             config,
-            cookie_jar,
+            cookie_store,
         })
     }
 
@@ -107,21 +107,11 @@ impl HttpClient {
 
         let max_retries = self.config.retries;
         let mut delay_ms = self.config.retry_delay_ms;
-        let parsed_url = url::Url::parse(url)?;
 
         for attempt in 0..=max_retries {
             let mut req = self.client.get(url);
             for (key, value) in &headers {
                 req = req.header(*key, *value);
-            }
-
-            // Injeta header Cookie se houver jar de cookies
-            if let Some(ref jar) = self.cookie_jar {
-                let jar_guard = jar.lock().unwrap();
-                let cookie_header = cookies::build_cookie_header(&jar_guard, &parsed_url);
-                if !cookie_header.is_empty() {
-                    req = req.header("Cookie", cookie_header);
-                }
             }
 
             match req.send().await {
@@ -132,17 +122,17 @@ impl HttpClient {
                     if status == reqwest::StatusCode::TOO_MANY_REQUESTS
                         && attempt < max_retries
                         && let Some(retry_after) = response.headers().get("retry-after")
-                            && let Ok(retry_str) = retry_after.to_str()
-                                && let Ok(secs) = retry_str.parse::<u64>() {
-                                    log::warn!(
-                                        "HTTP 429 em {}, aguardando {}s (Retry-After)",
-                                        url,
-                                        secs
-                                    );
-                                    tokio::time::sleep(std::time::Duration::from_secs(secs))
-                                        .await;
-                                    continue;
-                                }
+                        && let Ok(retry_str) = retry_after.to_str()
+                        && let Ok(secs) = retry_str.parse::<u64>()
+                    {
+                        log::warn!(
+                            "HTTP 429 em {}, aguardando {}s (Retry-After)",
+                            url,
+                            secs
+                        );
+                        tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
+                        continue;
+                    }
                     if !status.is_success() {
                         if attempt < max_retries && Self::is_retryable(status) {
                             log::warn!(
@@ -151,8 +141,7 @@ impl HttpClient {
                                 max_retries,
                                 delay_ms
                             );
-                            tokio::time::sleep(std::time::Duration::from_millis(delay_ms))
-                                .await;
+                            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
                             delay_ms *= 2;
                             continue;
                         }
@@ -170,40 +159,17 @@ impl HttpClient {
                         .collect();
                     let body = response.text().await?;
 
-                    // Persiste cookies de Set-Cookie se --cookies-jar foi passado
-                    if let Some(ref jar) = self.cookie_jar
-                        && self.config.cookies_jar_path.is_some() {
-                            let mut jar_guard = jar.lock().unwrap();
-                            let default_domain = parsed_url.host_str().unwrap_or("");
-                            let default_path = parsed_url.path();
-                            let default_path = if let Some(pos) = default_path.rfind('/') {
-                                &default_path[..pos + 1]
-                            } else {
-                                "/"
-                            };
-
-                            for (key, value) in &headers_map {
-                                if key.eq_ignore_ascii_case("set-cookie")
-                                    && let Some(cookie) = cookies::parse_set_cookie(
-                                        value,
-                                        default_domain,
-                                        default_path,
-                                    ) {
-                                        cookies::merge_cookie(&mut jar_guard, cookie);
-                                    }
-                            }
-
-                            if let Some(ref jar_path) = self.config.cookies_jar_path
-                                && let Err(e) =
-                                    cookies::save_netscape_cookies(&jar_guard, jar_path)
-                                {
-                                    log::warn!(
-                                        "Falha ao salvar cookies em {}: {}",
-                                        jar_path,
-                                        e
-                                    );
-                                }
-                        }
+                    // Persiste cookies se --cookies-jar foi passado
+                    if let Some(ref store) = self.cookie_store
+                        && let Some(ref jar_path) = self.config.cookies_jar_path
+                        && let Err(e) = store.save_to_file(jar_path)
+                    {
+                        log::warn!(
+                            "Falha ao salvar cookies em {}: {}",
+                            jar_path,
+                            e
+                        );
+                    }
 
                     // Salvar resposta no cache se --cache foi passado
                     if let Some(ref cache_dir) = self.config.cache_dir {

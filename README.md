@@ -211,6 +211,9 @@ faf https://site.com query "img" --filter "alt=.+"
 faf https://site.com query "div" --filter "class~=product" --filter "text!=."
 
 # Operadores disponíveis:
+#   !~=  negative substring match (case insensitive)
+#   !^=  does NOT start with
+#   !$=  does NOT end with
 #   ~=  substring match (case insensitive)
 #   ==  exact match
 #   !=  negated exact match

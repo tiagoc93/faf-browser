@@ -480,6 +480,68 @@ async fn test_cookie_jar_save() {
     let _ = std::fs::remove_file(&jar_path);
 }
 
+/// Servidor que responde com 302 + Set-Cookie e depois 200 em /final.
+fn start_redirect_cookie_server() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    thread::spawn(move || {
+        for _ in 0..2 {
+            let (mut stream, _) = match listener.accept() {
+                Ok(c) => c,
+                Err(_) => break,
+            };
+            let mut buf = [0u8; 4096];
+            let n = stream.read(&mut buf).unwrap_or(0);
+            let request = String::from_utf8_lossy(&buf[..n]);
+            let response = if request.contains("GET /set") {
+                let body = "Redirecting...";
+                format!(
+                    "HTTP/1.1 302 Found\r\nLocation: /final\r\nSet-Cookie: session=abc123; Path=/\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+            } else {
+                let body = "<html><head><title>Final</title></head><body>OK</body></html>";
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+            };
+            let _ = stream.write_all(response.as_bytes());
+        }
+    });
+    port
+}
+
+#[tokio::test]
+async fn test_cookie_jar_save_on_redirect() {
+    let jar_path = std::env::temp_dir().join(format!("faf_cookie_jar_redirect_{}.txt", std::process::id()));
+    let jar_path_str = jar_path.to_str().unwrap();
+
+    let port = start_redirect_cookie_server();
+
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/set", port),
+        "--cookies-jar",
+        jar_path_str,
+    ]);
+
+    let result = run(cli).await;
+    assert!(result.is_ok(), "request with redirect and --cookies-jar should succeed: {:?}", result);
+
+    assert!(jar_path.exists(), "cookie jar file should exist");
+    let content = std::fs::read_to_string(&jar_path).expect("should read jar file");
+    assert!(
+        content.contains("session") && content.contains("abc123"),
+        "jar should contain cookie set on 302 redirect, got: {}",
+        content
+    );
+
+    let _ = std::fs::remove_file(&jar_path);
+}
+
 // ---------------------------------------------------------------------------
 // Rate-Limit (follow delay)
 // ---------------------------------------------------------------------------

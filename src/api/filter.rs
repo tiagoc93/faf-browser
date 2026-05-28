@@ -16,7 +16,7 @@ impl QueryFilter {
             return Err("Filtro vazio".to_string());
         }
 
-        let operators = ["~=", "==", "!=", "^=", "$=", "="];
+        let operators = ["!~=", "!^=", "!$=", "~=", "==", "!=", "^=", "$=", "="];
         for op in &operators {
             if let Some(pos) = trimmed.find(op) {
                 let field = trimmed[..pos].trim().to_string();
@@ -63,10 +63,13 @@ impl QueryFilter {
 
         match self.operator.as_str() {
             "~=" => haystack.to_lowercase().contains(&self.value.to_lowercase()),
+            "!~=" => !haystack.to_lowercase().contains(&self.value.to_lowercase()),
             "==" => haystack == self.value,
             "!=" => haystack != self.value,
             "^=" => haystack.starts_with(&self.value),
+            "!^=" => !haystack.starts_with(&self.value),
             "$=" => haystack.ends_with(&self.value),
+            "!$=" => !haystack.ends_with(&self.value),
             "=" => {
                 // Se parece regex, tenta usar regex; senão, substring
                 if looks_like_regex(&self.value) {
@@ -141,11 +144,47 @@ mod tests {
 
     #[test]
     fn test_parse_all_operators() {
-        let ops = ["~=", "==", "!=", "^=", "$=", "="];
+        let ops = ["!~=", "!^=", "!$=", "~=", "==", "!=", "^=", "$=", "="];
         for op in &ops {
             let f = QueryFilter::parse(&format!("href{}https", op)).unwrap();
             assert_eq!(f.operator, *op);
         }
+    }
+
+    #[test]
+    fn test_matches_not_contains() {
+        let r_cat = make_result("a", None, &[], "Link", &[("href", "category/books")]);
+        let r_cata = make_result("a", None, &[], "Link", &[("href", "catalogue/books")]);
+        assert!(!QueryFilter::parse("href!~=category").unwrap().matches(&r_cat));
+        assert!(QueryFilter::parse("href!~=category").unwrap().matches(&r_cata));
+    }
+
+    #[test]
+    fn test_matches_not_starts_with() {
+        let r = make_result("a", None, &[], "Link", &[("href", "/relative/path")]);
+        assert!(QueryFilter::parse("href!^=https").unwrap().matches(&r));
+        assert!(!QueryFilter::parse("href!^=/relative").unwrap().matches(&r));
+    }
+
+    #[test]
+    fn test_matches_not_ends_with() {
+        let r = make_result("img", None, &[], "Image", &[("src", "image.png")]);
+        assert!(QueryFilter::parse("src!$=.svg").unwrap().matches(&r));
+        assert!(!QueryFilter::parse("src!$=.png").unwrap().matches(&r));
+    }
+
+    #[test]
+    fn test_apply_filters_with_negative() {
+        let r1 = make_result("a", None, &[], "Books", &[("href", "/catalogue/books")]);
+        let r2 = make_result("a", None, &[], "Travel", &[("href", "/category/travel")]);
+        let results = vec![r1, r2];
+        let filters = vec![
+            QueryFilter::parse("href~=books").unwrap(),
+            QueryFilter::parse("href!~=category").unwrap(),
+        ];
+        let filtered = apply_filters(results, &filters);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].text, "Books");
     }
 
     #[test]

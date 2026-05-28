@@ -1,5 +1,8 @@
 use anyhow::{Context, Result};
+use reqwest::cookie::CookieStore;
+use reqwest::header::HeaderValue;
 use std::io::BufRead;
+use std::sync::{Arc, Mutex};
 
 /// Representa um cookie no formato Netscape.
 #[derive(Debug, Clone)]
@@ -129,13 +132,14 @@ pub fn parse_set_cookie(
             path = val.to_string();
         } else if key.eq_ignore_ascii_case("Max-Age") {
             if let Ok(seconds) = val.parse::<i64>()
-                && seconds > 0 {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs();
-                    expires = now + seconds as u64;
-                }
+                && seconds > 0
+            {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                expires = now + seconds as u64;
+            }
         } else if key.eq_ignore_ascii_case("Expires") {
             // Tenta RFC 2822
             if let Ok(dt) = time::OffsetDateTime::parse(
@@ -208,6 +212,99 @@ pub fn merge_cookie(jar: &mut Vec<NetscapeCookie>, cookie: NetscapeCookie) {
         jar[pos] = cookie;
     } else {
         jar.push(cookie);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// NetscapeCookieStore — wrapper que delega ao reqwest::cookie::Jar e
+// mantém um mirror em Vec<NetscapeCookie> para persistência no formato
+// Netscape (--cookies / --cookies-jar).
+// ---------------------------------------------------------------------------
+
+#[derive(Clone)]
+pub struct NetscapeCookieStore {
+    inner: Arc<reqwest::cookie::Jar>,
+    netscape: Arc<Mutex<Vec<NetscapeCookie>>>,
+}
+
+impl Default for NetscapeCookieStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl NetscapeCookieStore {
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(reqwest::cookie::Jar::default()),
+            netscape: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    /// Carrega cookies de um arquivo Netscape para o store.
+    pub fn load_from_file(&self, path: &str) -> anyhow::Result<()> {
+        let cookies = load_netscape_cookies(path)?;
+        for cookie in &cookies {
+            let mut set_cookie = format!(
+                "{}={}; Domain={}; Path={}",
+                cookie.name,
+                cookie.value,
+                cookie.domain.trim_start_matches('.'),
+                cookie.path,
+            );
+            if cookie.secure {
+                set_cookie.push_str("; Secure");
+            }
+            if cookie.expires > 0 {
+                let dt = time::OffsetDateTime::from_unix_timestamp(cookie.expires as i64)
+                    .unwrap_or(time::OffsetDateTime::UNIX_EPOCH);
+                let expires_str = dt
+                    .format(&time::format_description::well_known::Rfc2822)
+                    .unwrap_or_default();
+                if !expires_str.is_empty() {
+                    set_cookie.push_str(&format!("; Expires={}", expires_str));
+                }
+            }
+
+            let scheme = if cookie.secure { "https" } else { "http" };
+            let host = cookie.domain.trim_start_matches('.');
+            let url_str = format!("{}://{}{}", scheme, host, cookie.path);
+            if let Ok(url) = reqwest::Url::parse(&url_str) {
+                self.inner.add_cookie_str(&set_cookie, &url);
+            }
+        }
+        *self.netscape.lock().unwrap() = cookies;
+        Ok(())
+    }
+
+    /// Salva o mirror Netscape para arquivo.
+    pub fn save_to_file(&self, path: &str) -> anyhow::Result<()> {
+        let cookies = self.netscape.lock().unwrap();
+        save_netscape_cookies(&cookies, path)?;
+        Ok(())
+    }
+}
+
+impl CookieStore for NetscapeCookieStore {
+    fn set_cookies(
+        &self,
+        cookie_headers: &mut dyn Iterator<Item = &HeaderValue>,
+        url: &reqwest::Url,
+    ) {
+        for header in cookie_headers {
+            if let Ok(value) = header.to_str() {
+                self.inner.add_cookie_str(value, url);
+                let domain = url.host_str().unwrap_or("");
+                let path = url.path();
+                if let Some(cookie) = parse_set_cookie(value, domain, path) {
+                    merge_cookie(&mut self.netscape.lock().unwrap(), cookie);
+                }
+            }
+        }
+    }
+
+    fn cookies(&self, url: &reqwest::Url) -> Option<HeaderValue> {
+        self.inner.cookies(url)
     }
 }
 
