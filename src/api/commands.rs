@@ -64,6 +64,14 @@ pub struct Cli {
     #[arg(long = "filter", global = true)]
     pub filter: Option<Vec<String>>,
 
+    /// Número máximo de tentativas de retry em requisições falhas
+    #[arg(long = "retries", global = true, default_value = "0")]
+    pub retries: u64,
+
+    /// Delay inicial entre retries em milissegundos
+    #[arg(long = "retry-delay", global = true, default_value = "1000")]
+    pub retry_delay: u64,
+
     /// Comando: links, images, metadata, query
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -130,6 +138,8 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             .unwrap_or_else(|| crate::utils::config::Config::default().user_agent),
         timeout_secs: cli.timeout,
         proxy: cli.proxy.clone(),
+        retries: cli.retries,
+        retry_delay_ms: cli.retry_delay,
     };
 
     let client = crate::http::client::HttpClient::new(config)?;

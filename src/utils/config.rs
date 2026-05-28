@@ -4,6 +4,8 @@ pub struct Config {
     pub user_agent: String,
     pub timeout_secs: u64,
     pub proxy: Option<String>,
+    pub retries: u64,
+    pub retry_delay_ms: u64,
 }
 
 impl Default for Config {
@@ -17,6 +19,8 @@ impl Default for Config {
             .to_string(),
             timeout_secs: 30,
             proxy: None,
+            retries: 0,
+            retry_delay_ms: 1000,
         }
     }
 }
