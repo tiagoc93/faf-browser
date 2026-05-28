@@ -249,8 +249,14 @@ fn render_node(
         }
     }
 
-    // Renderizar filhos
-    for child in &node.children {
+    // Renderizar filhos ordenados por z-index (stable sort, menor primeiro)
+    let mut children_refs: Vec<&VisualNode> = node.children.iter().collect();
+    children_refs.sort_by(|a, b| {
+        let z_a = a.style.z_index.parse::<i32>().unwrap_or(0);
+        let z_b = b.style.z_index.parse::<i32>().unwrap_or(0);
+        z_a.cmp(&z_b)
+    });
+    for child in children_refs {
         render_node(
             pixmap,
             child,

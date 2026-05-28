@@ -93,7 +93,8 @@ Transformar o screenshot do FAF Browser de "prova de conceito" (elementos empilh
 
 ---
 
-### 🟡 T049 — Bordas CSS (1 dia)
+### 🟡 T049 — Bordas CSS ✅
+**Concluído: border-* parse em style.rs, renderização dos 4 lados em screenshot.rs, shorthand border suportado.**
 
 **Objetivo:** Renderizar bordas nos elementos (width, style, color).
 
@@ -110,7 +111,8 @@ Transformar o screenshot do FAF Browser de "prova de conceito" (elementos empilh
 
 ---
 
-### 🟡 T050 — Imagens `<img>` (1 dia)
+### 🟡 T050 — Imagens `<img>` ✅
+**Concluído: image crate, attributes HashMap no VisualNode, decode + render de img, fallback placeholder, cache simples.**
 
 **Objetivo:** Carregar e renderizar imagens da página no screenshot.
 

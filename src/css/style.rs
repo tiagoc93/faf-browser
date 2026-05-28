@@ -35,6 +35,10 @@ pub struct ComputedStyle {
     pub border_right_style: String,
     pub border_bottom_style: String,
     pub border_left_style: String,
+    pub position: String,
+    pub top: String,
+    pub left: String,
+    pub z_index: String,
 }
 
 impl Default for ComputedStyle {
@@ -67,6 +71,10 @@ impl Default for ComputedStyle {
             border_right_style: "none".to_string(),
             border_bottom_style: "none".to_string(),
             border_left_style: "none".to_string(),
+            position: "static".to_string(),
+            top: "auto".to_string(),
+            left: "auto".to_string(),
+            z_index: "auto".to_string(),
         }
     }
 }
@@ -154,6 +162,10 @@ fn apply_declaration(style: &mut ComputedStyle, property: &str, value: &str) {
         "padding-bottom" => style.padding_bottom = value.to_string(),
         "padding-left" => style.padding_left = value.to_string(),
         "display" => style.display = value.to_string(),
+        "position" => style.position = value.to_string(),
+        "top" => style.top = value.to_string(),
+        "left" => style.left = value.to_string(),
+        "z-index" => style.z_index = value.to_string(),
         "margin" => apply_shorthand_margin(style, value),
         "padding" => apply_shorthand_padding(style, value),
         "border-top-width" => style.border_top_width = value.to_string(),

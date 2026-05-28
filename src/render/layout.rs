@@ -133,9 +133,23 @@ fn layout_block(
         content_height + bm.padding_top + bm.padding_bottom
     };
 
+    let mut final_x = block_x;
+    let mut final_y = block_y;
+
+    if node.style.position == "relative" {
+        if node.style.top != "auto" {
+            let top_px = css_to_pixels(&node.style.top, viewport_width, font_size);
+            final_y += top_px;
+        }
+        if node.style.left != "auto" {
+            let left_px = css_to_pixels(&node.style.left, viewport_width, font_size);
+            final_x += left_px;
+        }
+    }
+
     node.rect = Rect::from_xywh(
-        block_x,
-        block_y,
+        final_x,
+        final_y,
         block_width.max(0.0),
         block_height.max(0.0),
     )
