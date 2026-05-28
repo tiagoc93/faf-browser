@@ -5,7 +5,7 @@
 | Batch | Tasks | Status | Commit |
 |-------|-------|--------|--------|
 | 1 | T021 (runtime básico) | ✅ Concluído | c64d56d |
-| 2 | T022 (DOM bridge) | ⏳ Pendente | — |
+| 2 | T022 (DOM bridge) | ✅ Concluído | 22ed5a9 |
 | 3 | T023 + T025 + T026 + T027 (timers, timeout, console, erros) | ⏳ Pendente | — |
 | 4 | T024 (fetch bridge) | ⏳ Pendente | — |
 | 5 | T028 + T029 + T030 (scripts, CLI, testes) | ⏳ Pendente | — |
@@ -15,7 +15,7 @@
 | Task | Nome | Status |
 |------|------|--------|
 | T021 | Embed rquickjs runtime básico | ✅ Feito |
-| T022 | Bridge DOM ↔ JS | ⏳ Pendente |
+| T022 | Bridge DOM ↔ JS | ✅ Feito |
 | T023 | setTimeout / setInterval com tokio | ⏳ Pendente |
 | T024 | Fetch API bridge | ⏳ Pendente |
 | T025 | Timeout de execução JS (5s default) | ⏳ Pendente |

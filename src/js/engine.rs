@@ -11,7 +11,96 @@ impl JsRuntime {
     pub fn new() -> Result<Self> {
         let runtime = Runtime::new()?;
         let context = Context::full(&runtime).context("failed to create full rquickjs context")?;
-        Ok(Self { runtime, context })
+        let mut this = Self { runtime, context };
+        this.init_console()?;
+        Ok(this)
+    }
+
+    pub fn init_console(&mut self) -> Result<()> {
+        self.context.with(|ctx| {
+            let console = rquickjs::Object::new(ctx.clone())
+                .context("failed to create console object")?;
+
+            let log = rquickjs::Function::new(
+                ctx.clone(),
+                |args: rquickjs::function::Rest<rquickjs::Value<'_>>| {
+                    let parts: Vec<String> = args
+                        .0
+                        .iter()
+                        .map(|v| {
+                            v.as_string()
+                                .map(|s| s.to_string().unwrap_or_default())
+                                .unwrap_or_else(|| {
+                                    v.ctx()
+                                        .json_stringify(v)
+                                        .ok()
+                                        .flatten()
+                                        .and_then(|s| s.to_string().ok())
+                                        .unwrap_or_else(|| "[object]".to_string())
+                                })
+                        })
+                        .collect();
+                    log::info!("[JS] {}", parts.join(" "));
+                },
+            )
+            .context("failed to create console.log")?;
+
+            let warn = rquickjs::Function::new(
+                ctx.clone(),
+                |args: rquickjs::function::Rest<rquickjs::Value<'_>>| {
+                    let parts: Vec<String> = args
+                        .0
+                        .iter()
+                        .map(|v| {
+                            v.as_string()
+                                .map(|s| s.to_string().unwrap_or_default())
+                                .unwrap_or_else(|| {
+                                    v.ctx()
+                                        .json_stringify(v)
+                                        .ok()
+                                        .flatten()
+                                        .and_then(|s| s.to_string().ok())
+                                        .unwrap_or_else(|| "[object]".to_string())
+                                })
+                        })
+                        .collect();
+                    log::warn!("[JS] {}", parts.join(" "));
+                },
+            )
+            .context("failed to create console.warn")?;
+
+            let error = rquickjs::Function::new(
+                ctx.clone(),
+                |args: rquickjs::function::Rest<rquickjs::Value<'_>>| {
+                    let parts: Vec<String> = args
+                        .0
+                        .iter()
+                        .map(|v| {
+                            v.as_string()
+                                .map(|s| s.to_string().unwrap_or_default())
+                                .unwrap_or_else(|| {
+                                    v.ctx()
+                                        .json_stringify(v)
+                                        .ok()
+                                        .flatten()
+                                        .and_then(|s| s.to_string().ok())
+                                        .unwrap_or_else(|| "[object]".to_string())
+                                })
+                        })
+                        .collect();
+                    log::error!("[JS] {}", parts.join(" "));
+                },
+            )
+            .context("failed to create console.error")?;
+
+            console.set("log", log).context("failed to set console.log")?;
+            console.set("warn", warn).context("failed to set console.warn")?;
+            console.set("error", error).context("failed to set console.error")?;
+            ctx.globals()
+                .set("console", console)
+                .context("failed to set global console")?;
+            Ok(())
+        })
     }
 
     pub fn eval(&self, code: &str) -> Result<String> {
@@ -137,5 +226,24 @@ mod tests {
         let obj = json.as_object().unwrap();
         assert_eq!(obj.get("tag").unwrap(), "p");
         assert_eq!(obj.get("text").unwrap(), "Introduction");
+    }
+
+    #[test]
+    fn test_console_log() {
+        let rt = JsRuntime::new().unwrap();
+        // Should not panic; logs are captured by log crate
+        rt.eval("console.log('hello', 'world')").unwrap();
+    }
+
+    #[test]
+    fn test_console_warn() {
+        let rt = JsRuntime::new().unwrap();
+        rt.eval("console.warn('warning', 123)").unwrap();
+    }
+
+    #[test]
+    fn test_console_error() {
+        let rt = JsRuntime::new().unwrap();
+        rt.eval("console.error('error', {a: 1})").unwrap();
     }
 }
