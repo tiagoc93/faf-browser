@@ -309,3 +309,82 @@ fn test_click_via_stdin() {
         stderr
     );
 }
+
+// ---------------------------------------------------------------------------
+// T040 — Formulários: fill, select, submit
+// ---------------------------------------------------------------------------
+
+fn start_form_server() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    thread::spawn(move || {
+        for _ in 0..5 {
+            let (mut stream, _) = match listener.accept() {
+                Ok(c) => c,
+                Err(_) => break,
+            };
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            let body = r#"<html><body>
+                <form id="login" action="/login" method="POST">
+                    <input id="email" name="email" value="default@example.com">
+                    <select id="country" name="country">
+                        <option value="US">USA</option>
+                        <option value="BR">Brasil</option>
+                    </select>
+                    <input id="agree" name="agree" type="checkbox">
+                    <button type="submit">Submit</button>
+                </form>
+            </body></html>"#;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = stream.write_all(response.as_bytes());
+        }
+    });
+    port
+}
+
+#[tokio::test]
+async fn test_fill_input() {
+    let port = start_form_server();
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "--no-scripts",
+        "--js",
+        r#"var el = document.querySelector('#email'); el.value = 'user@test.com'; if (el.value !== 'user@test.com') throw new Error('value mismatch: ' + el.value); 'ok'"#,
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok(), "fill input should succeed: {:?}", result);
+}
+
+#[tokio::test]
+async fn test_select_option() {
+    let port = start_form_server();
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "--no-scripts",
+        "--js",
+        r#"var el = document.querySelector('#country'); el.value = 'BR'; if (el.value !== 'BR') throw new Error('value mismatch: ' + el.value); 'ok'"#,
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok(), "select option should succeed: {:?}", result);
+}
+
+#[tokio::test]
+async fn test_checkbox() {
+    let port = start_form_server();
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "--no-scripts",
+        "--js",
+        r#"var el = document.querySelector('#agree'); el.checked = true; if (el.checked !== true) throw new Error('checked mismatch: ' + el.checked); 'ok'"#,
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok(), "checkbox should succeed: {:?}", result);
+}

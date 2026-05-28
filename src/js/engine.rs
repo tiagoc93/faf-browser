@@ -26,6 +26,7 @@ impl JsRuntime {
             client: None,
         };
         this.init_console()?;
+        this.init_polyfills()?;
         Ok(this)
     }
 
@@ -124,6 +125,47 @@ impl JsRuntime {
             ctx.globals()
                 .set("console", console)
                 .context("failed to set global console")?;
+            Ok(())
+        })
+    }
+
+    pub fn init_polyfills(&mut self) -> Result<()> {
+        self.context.with(|ctx| {
+            ctx.eval::<(), _>(
+                r#"
+                (function() {
+                    if (typeof URLSearchParams === 'undefined') {
+                        globalThis.URLSearchParams = class URLSearchParams {
+                            constructor(init) {
+                                this.params = {};
+                                if (typeof init === 'string') {
+                                    var pairs = init.split('&');
+                                    for (var i = 0; i < pairs.length; i++) {
+                                        var pair = pairs[i];
+                                        if (!pair) continue;
+                                        var parts = pair.split('=');
+                                        var k = decodeURIComponent(parts[0] || '');
+                                        var v = decodeURIComponent(parts[1] || '');
+                                        this.params[k] = v;
+                                    }
+                                }
+                            }
+                            get(name) { return this.params[name]; }
+                            set(name, value) { this.params[name] = value; }
+                            toString() {
+                                var entries = Object.entries(this.params);
+                                var parts = [];
+                                for (var i = 0; i < entries.length; i++) {
+                                    parts.push(encodeURIComponent(entries[i][0]) + '=' + encodeURIComponent(entries[i][1]));
+                                }
+                                return parts.join('&');
+                            }
+                        };
+                    }
+                })();
+                "#,
+            )
+            .context("failed to inject URLSearchParams polyfill")?;
             Ok(())
         })
     }

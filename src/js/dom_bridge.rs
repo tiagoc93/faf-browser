@@ -103,7 +103,7 @@ pub fn inject_dom(ctx: &Ctx<'_>, doc: &HtmlDocument) -> Result<()> {
         "#,
     )?;
 
-    // Polyfill: Event, MouseEvent, dispatchEvent, click()
+    // Polyfill: Event, MouseEvent, dispatchEvent, click(), value, checked, submit()
     let _: () = ctx.eval(
         r#"
         (function() {
@@ -130,17 +130,73 @@ pub fn inject_dom(ctx: &Ctx<'_>, doc: &HtmlDocument) -> Result<()> {
 
             function enhance(el) {
                 if (!el || typeof el !== 'object') return el;
-                if (el.dispatchEvent) return el;
-                el.dispatchEvent = function(event) {
-                    if (this.attributes && this.attributes.onclick) {
-                        var fn = new Function(this.attributes.onclick);
-                        fn.call(this);
-                    }
-                    return true;
-                };
-                el.click = function() {
-                    return this.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-                };
+                if (el.__enhanced) return el;
+                el.__enhanced = true;
+
+                if (!el.dispatchEvent) {
+                    el.dispatchEvent = function(event) {
+                        if (this.attributes && this.attributes.onclick) {
+                            var fn = new Function(this.attributes.onclick);
+                            fn.call(this);
+                        }
+                        return true;
+                    };
+                }
+                if (!el.click) {
+                    el.click = function() {
+                        return this.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                    };
+                }
+
+                Object.defineProperty(el, 'value', {
+                    get: function() {
+                        var tag = this.tag;
+                        if (tag === 'input' || tag === 'textarea' || tag === 'select') {
+                            if (this.attributes && this.attributes.value !== undefined) {
+                                return this.attributes.value;
+                            }
+                            return '';
+                        }
+                        return this.text || '';
+                    },
+                    set: function(v) {
+                        this.attributes = this.attributes || {};
+                        this.attributes.value = String(v);
+                    },
+                    enumerable: true,
+                    configurable: true
+                });
+
+                Object.defineProperty(el, 'checked', {
+                    get: function() {
+                        return !!(this.attributes && (this.attributes.checked === 'true' || this.attributes.checked === 'checked'));
+                    },
+                    set: function(v) {
+                        this.attributes = this.attributes || {};
+                        this.attributes.checked = v ? 'true' : 'false';
+                    },
+                    enumerable: true,
+                    configurable: true
+                });
+
+                if (el.tag === 'form' && !el.submit) {
+                    el.submit = function() {
+                        var form = this;
+                        var method = (form.attributes && form.attributes.method) || 'get';
+                        var action = (form.attributes && form.attributes.action) || '';
+                        var data = {};
+                        var allInputs = document.querySelectorAll('input[name], select[name], textarea[name]');
+                        for (var i = 0; i < allInputs.length; i++) {
+                            var input = allInputs[i];
+                            var name = input.attributes && input.attributes.name;
+                            if (name) {
+                                data[name] = input.value !== undefined ? input.value : (input.attributes && input.attributes.value) || '';
+                            }
+                        }
+                        return JSON.stringify({ method: method.toUpperCase(), action: action, data: data });
+                    };
+                }
+
                 return el;
             }
 
