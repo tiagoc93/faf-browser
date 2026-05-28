@@ -686,3 +686,120 @@ async fn test_screenshot_display_none() {
     assert!(metadata.len() >= 500, "PNG deve ter >= 500 bytes, tinha {}", metadata.len());
     let _ = std::fs::remove_file(&output);
 }
+
+// ---------------------------------------------------------------------------
+// Edge Cases
+// ---------------------------------------------------------------------------
+
+/// Servidor com botão que se remove do DOM ao ser clicado (SPA navigation)
+fn start_disappearing_element_server() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let counter = std::sync::Arc::new(AtomicU64::new(0));
+    let c = counter.clone();
+    thread::spawn(move || {
+        for _ in 0..5 {
+            let (mut stream, _) = match listener.accept() {
+                Ok(c) => c,
+                Err(_) => break,
+            };
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            let count = c.fetch_add(1, Ordering::SeqCst);
+            let body = if count == 0 {
+                r#"<html><body><button id="btn" onclick="window.navigated = true">Click</button></body></html>"#.to_string()
+            } else {
+                r#"<html><body><h1>Navigated</h1></body></html>"#.to_string()
+            };
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(), body
+            );
+            let _ = stream.write_all(response.as_bytes());
+        }
+    });
+    port
+}
+
+#[tokio::test]
+async fn test_click_disappearing_element() {
+    let port = start_disappearing_element_server();
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "click",
+        "#btn",
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok(), "click on disappearing element should succeed: {:?}", result);
+}
+
+#[tokio::test]
+async fn test_screenshot_large_width() {
+    let port = start_screenshot_server();
+    let output = format!("/tmp/faf_test_screenshot_large_{}.png", std::process::id());
+    let cli = Cli::parse_from([
+        "faf",
+        "screenshot",
+        &format!("http://127.0.0.1:{}/", port),
+        "--width", "1920",
+        "--output", &output,
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok(), "screenshot large width should succeed: {:?}", result);
+    assert!(std::path::Path::new(&output).exists(), "PNG deve existir");
+    let metadata = std::fs::metadata(&output).unwrap();
+    assert!(metadata.len() >= 500, "PNG deve ter >= 500 bytes, tinha {}", metadata.len());
+    let _ = std::fs::remove_file(&output);
+}
+
+#[tokio::test]
+async fn test_watch_interval_zero() {
+    let port = start_watch_changing_server();
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "watch",
+        "h1",
+        "--interval",
+        "0",
+        "--max-checks",
+        "3",
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok(), "watch with interval 0 should succeed: {:?}", result);
+}
+
+#[test]
+fn test_scroll_clamp_negative() {
+    let port = start_basic_server();
+    let child = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            &format!("http://127.0.0.1:{}/", port),
+            "--no-scripts",
+            "--js",
+            "window.scrollTo(0, -9999); window.pageYOffset",
+        ])
+        .current_dir("/home/hermes/faf-browser")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn cargo run");
+
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        output.status.success(),
+        "scroll clamp should exit successfully. stdout: {}, stderr: {}",
+        stdout, stderr
+    );
+    assert!(
+        stdout.contains("0"),
+        "expected pageYOffset=0 in stdout, got: {}",
+        stdout
+    );
+}
