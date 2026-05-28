@@ -131,7 +131,7 @@ faf wait "#app-loaded" --url https://site.com --json
 
 ---
 
-### T033 — Modo Interativo / REPL (🟡 médio)
+### T033 — Modo Interativo / REPL (🟡 médio) ✅
 **Arquivos:** `src/api/commands.rs` (subcomando `Repl`, flag `--stdin`), `src/api/repl.rs` (novo), `Cargo.toml` (rustyline)
 
 **O que faz:** Permite executar múltiplos comandos JS numa mesma sessão, mantendo o estado do runtime entre comandos.
@@ -280,7 +280,7 @@ echo "document.title" | faf --url https://books.toscrape.com/ --stdin
 
 ---
 
-### T038 — Testes M4 (🟡 médio)
+### T038 — Testes M4 (🟡 médio) ✅
 **Arquivos:** `tests/m4_test.rs` (novo)
 
 **O que fazer:** Criar testes de integração para todas as tasks M4 usando servidor HTTP local.
