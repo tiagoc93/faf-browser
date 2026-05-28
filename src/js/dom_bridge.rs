@@ -103,5 +103,63 @@ pub fn inject_dom(ctx: &Ctx<'_>, doc: &HtmlDocument) -> Result<()> {
         "#,
     )?;
 
+    // Polyfill: Event, MouseEvent, dispatchEvent, click()
+    let _: () = ctx.eval(
+        r#"
+        (function() {
+            if (typeof Event === 'undefined') {
+                globalThis.Event = class Event {
+                    constructor(type, opts) {
+                        this.type = type;
+                        this.bubbles = !!(opts && opts.bubbles);
+                        this.cancelable = !!(opts && opts.cancelable);
+                    }
+                };
+            }
+            if (typeof MouseEvent === 'undefined') {
+                globalThis.MouseEvent = class MouseEvent extends Event {
+                    constructor(type, opts) {
+                        super(type, opts);
+                    }
+                };
+            }
+
+            var origGEI = document.getElementById;
+            var origQS  = document.querySelector;
+            var origQSA = document.querySelectorAll;
+
+            function enhance(el) {
+                if (!el || typeof el !== 'object') return el;
+                if (el.dispatchEvent) return el;
+                el.dispatchEvent = function(event) {
+                    if (this.attributes && this.attributes.onclick) {
+                        var fn = new Function(this.attributes.onclick);
+                        fn.call(this);
+                    }
+                    return true;
+                };
+                el.click = function() {
+                    return this.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                };
+                return el;
+            }
+
+            document.getElementById = function(id) {
+                return enhance(origGEI(id));
+            };
+            document.querySelector = function(sel) {
+                return enhance(origQS(sel));
+            };
+            document.querySelectorAll = function(sel) {
+                var arr = origQSA(sel);
+                for (var i = 0; i < arr.length; i++) {
+                    enhance(arr[i]);
+                }
+                return arr;
+            };
+        })();
+        "#,
+    )?;
+
     Ok(())
 }

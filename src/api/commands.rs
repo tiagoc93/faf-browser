@@ -164,6 +164,16 @@ pub struct WaitArgs {
     pub interval: u64,
 }
 
+#[derive(clap::Args, Debug)]
+pub struct ClickArgs {
+    /// Seletor CSS do elemento a clicar
+    pub selector: String,
+
+    /// Timeout em segundos para aguardar o elemento (default: 5)
+    #[arg(long = "timeout", default_value = "5")]
+    pub timeout: u64,
+}
+
 #[derive(clap::Subcommand, Debug)]
 pub enum Command {
     /// Extrair todos os links da página
@@ -181,6 +191,8 @@ pub enum Command {
     Follow(FollowArgs),
     /// Aguardar elemento CSS aparecer no DOM
     Wait(WaitArgs),
+    /// Simular click em elemento CSS
+    Click(ClickArgs),
     /// Modo interativo REPL para executar múltiplos comandos JS
     Repl(ReplArgs),
 }
@@ -665,6 +677,54 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 args.selector,
                 args.timeout
             );
+        }
+        Some(Command::Click(args)) => {
+            let elements = doc.query(&args.selector)?;
+            if elements.is_empty() {
+                anyhow::bail!("Elemento '{}' não encontrado", args.selector);
+            }
+
+            let mut rt = crate::js::JsRuntime::with_client(client.clone())?;
+            rt.set_dom(&doc)?;
+            rt.init_timers()?;
+            rt.init_fetch()?;
+
+            if !cli.no_scripts {
+                let base_url = url::Url::parse(&url)?;
+                rt.execute_page_scripts(&doc, &base_url, &client).await?;
+            }
+
+            let js_code = format!(
+                "document.querySelector({}).click()",
+                serde_json::to_string(&args.selector)?
+            );
+            let _click_result = rt.eval_with_timeout(&js_code, cli.js_timeout)?;
+
+            let resp2 = client.get(&url).await?;
+            let html2 = resp2.body;
+            let doc2 = crate::dom::HtmlDocument::parse(&html2);
+
+            let page_result = crate::api::output::FollowPageResult {
+                url: url.clone(),
+                title: doc2.title(),
+                first_heading: doc2
+                    .query("h1")
+                    .ok()
+                    .and_then(|r| r.into_iter().next())
+                    .map(|r| r.text),
+                text_snippet: truncate(&doc2.visible_text(), 200),
+                extracted: None,
+            };
+
+            if cli.json {
+                println!("{}", serde_json::to_string_pretty(&page_result)?);
+            } else {
+                println!("🖱️ Click em '{}': disparado", args.selector);
+                if let Some(title) = &page_result.title {
+                    println!("📌 Título pós-click: {}", title);
+                }
+                println!("📝 {}", page_result.text_snippet);
+            }
         }
         Some(Command::Repl(_args)) => {
             let mut rt = crate::js::JsRuntime::with_client(client.clone())?;

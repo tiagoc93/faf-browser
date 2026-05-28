@@ -3,6 +3,9 @@ use std::net::TcpListener;
 use std::process::{Command, Stdio};
 use std::thread;
 
+use clap::Parser;
+use faf_browser::api::commands::{Cli, run};
+
 // ---------------------------------------------------------------------------
 // T033 — REPL e stdin
 // ---------------------------------------------------------------------------
@@ -171,5 +174,138 @@ fn test_repl_json_toggle() {
         stdout.contains("JSON Toggle"),
         "expected JSON stringified title, got: {}",
         stdout
+    );
+}
+
+// ---------------------------------------------------------------------------
+// T039 — Click via dispatchEvent
+// ---------------------------------------------------------------------------
+
+/// Servidor com botão que tem onclick inline.
+fn start_click_button_server() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    thread::spawn(move || {
+        for _ in 0..5 {
+            let (mut stream, _) = match listener.accept() {
+                Ok(c) => c,
+                Err(_) => break,
+            };
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            let body = r#"<html><head><title>Click Test</title></head><body><button id="btn" onclick="this.clicked = true">Clique</button></body></html>"#;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = stream.write_all(response.as_bytes());
+        }
+    });
+    port
+}
+
+#[tokio::test]
+async fn test_click_subcommand_success() {
+    let port = start_click_button_server();
+
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "click",
+        "#btn",
+    ]);
+
+    let result = run(cli).await;
+    assert!(result.is_ok(), "click subcommand should succeed: {:?}", result);
+}
+
+#[tokio::test]
+async fn test_click_subcommand_not_found() {
+    let port = start_click_button_server();
+
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "click",
+        ".missing",
+    ]);
+
+    let result = run(cli).await;
+    assert!(result.is_err(), "click on missing element should fail");
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("não encontrado") || err.contains("not found"),
+        "expected 'not found' error, got: {}",
+        err
+    );
+}
+
+#[tokio::test]
+async fn test_click_js_bridge() {
+    let port = start_click_button_server();
+
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "--no-scripts",
+        "--js",
+        r#"var btn = document.querySelector('#btn'); btn.click(); btn.clicked"#,
+    ]);
+
+    let result = run(cli).await;
+    assert!(result.is_ok(), "JS click bridge should succeed: {:?}", result);
+}
+
+#[tokio::test]
+async fn test_click_json_output() {
+    let port = start_click_button_server();
+
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "--json",
+        "click",
+        "#btn",
+    ]);
+
+    let result = run(cli).await;
+    assert!(result.is_ok(), "click --json should succeed: {:?}", result);
+}
+
+#[test]
+fn test_click_via_stdin() {
+    let port = start_click_button_server();
+
+    let mut child = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            &format!("http://127.0.0.1:{}/", port),
+            "--stdin",
+            "--no-scripts",
+        ])
+        .current_dir("/home/hermes/faf-browser")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn cargo run");
+
+    {
+        let stdin = child.stdin.take().unwrap();
+        let mut stdin = std::io::BufWriter::new(stdin);
+        stdin.write_all(b"document.querySelector('#btn').click()\n").unwrap();
+    }
+
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        output.status.success(),
+        "click via stdin should exit successfully. stdout: {}, stderr: {}",
+        stdout,
+        stderr
     );
 }
