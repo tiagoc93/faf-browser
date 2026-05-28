@@ -54,7 +54,6 @@ pub fn init_fetch(ctx: &Context, client: &crate::http::client::HttpClient) -> Re
                                     }
                                 }
                             }
-                        }
 
                         if let Some(body_str) = body {
                             req = req.body(body_str);
