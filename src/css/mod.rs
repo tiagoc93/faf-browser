@@ -1,3 +1,4 @@
+pub mod layout;
 pub mod parser;
 pub mod selector;
 pub mod style;
