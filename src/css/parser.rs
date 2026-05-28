@@ -1,5 +1,7 @@
+use crate::http::client::HttpClient;
 use anyhow::Result;
 use cssparser::{Parser, ParserInput, ToCss, Token};
+use url::Url;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Stylesheet {
@@ -211,6 +213,53 @@ fn skip_until_semicolon(parser: &mut Parser) {
             break;
         }
     }
+}
+
+/// Extrai CSS de tags `<style>` e `<link rel="stylesheet">` da página.
+/// Retorna o CSS concatenado de todas as fontes.
+pub async fn extract_page_stylesheets(
+    doc: &scraper::Html,
+    base_url: &Url,
+    client: &HttpClient,
+) -> Vec<String> {
+    let mut css_sources = Vec::new();
+
+    // 1. Extrair conteúdo de tags <style>
+    if let Ok(style_selector) = scraper::Selector::parse("style") {
+        for el in doc.select(&style_selector) {
+            let css_text: String = el.text().collect();
+            if !css_text.trim().is_empty() {
+                css_sources.push(css_text);
+            }
+        }
+    }
+
+    // 2. Extrair href de tags <link rel="stylesheet">
+    if let Ok(link_selector) = scraper::Selector::parse("link[rel~=stylesheet]") {
+        for el in doc.select(&link_selector) {
+            if let Some(href) = el.value().attr("href") {
+                let resolved_url = match base_url.join(href) {
+                    Ok(u) => u.to_string(),
+                    Err(err) => {
+                        log::warn!("Falha ao resolver URL do stylesheet '{}': {}", href, err);
+                        continue;
+                    }
+                };
+                match client.get(&resolved_url).await {
+                    Ok(css_text) => {
+                        if !css_text.trim().is_empty() {
+                            css_sources.push(css_text);
+                        }
+                    }
+                    Err(err) => {
+                        log::warn!("Falha ao baixar CSS '{}': {}", resolved_url, err);
+                    }
+                }
+            }
+        }
+    }
+
+    css_sources
 }
 
 #[cfg(test)]

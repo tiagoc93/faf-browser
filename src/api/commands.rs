@@ -1,4 +1,5 @@
 use clap::Parser;
+use url::Url;
 
 /// FAF BROWSER — Fast As Fuck. Navegador headless 100% Rust.
 #[derive(Parser, Debug)]
@@ -14,6 +15,10 @@ pub struct Cli {
     /// CSS inline ou caminho para arquivo CSS
     #[arg(long = "css", visible_alias = "style", global = true)]
     pub css: Option<String>,
+
+    /// Desabilita extração automática de CSS da página
+    #[arg(long = "no-page-css", global = true)]
+    pub no_page_css: bool,
 
     /// Proxy (http:// ou socks5://)
     #[arg(short = 'x', long = "proxy")]
@@ -141,7 +146,21 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         }
         Some(Command::Query { selector }) => {
             let results = doc.query(selector)?;
-            let css_input = load_css_input(&cli.css)?;
+            let css_input = if cli.no_page_css || cli.css.is_some() {
+                load_css_input(&cli.css)?
+            } else {
+                let page_css = crate::css::parser::extract_page_stylesheets(
+                    doc.scraper_html(),
+                    &Url::parse(&url)?,
+                    &client,
+                )
+                .await;
+                if page_css.is_empty() {
+                    None
+                } else {
+                    Some(page_css.join("\n"))
+                }
+            };
 
             if let Some(css_text) = css_input {
                 let stylesheet = crate::css::parser::parse_css(&css_text)?;
