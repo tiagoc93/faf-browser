@@ -369,14 +369,243 @@ faf follow ".product_pod h3 a" --extract "h3, .price_color" \
 
 ---
 
-## 📋 M5 — Extração Avançada (Planejado · 6 tasks)
+## 📋 M5 — Interação com Páginas (Page Interaction) (Planejado · 6 tasks)
 
-- [ ] **T039** — Click via JS: simular click num elemento (seletor → dispatchEvent)
-- [ ] **T040** — Formulários: preencher input, submit, extrair resultado
-- [ ] **T041** — Screenshot: renderizar página via tiny-skia (visual output)
-- [ ] **T042** — Modo watch: monitorar mudanças em elemento/URL (cron-like)
-- [ ] **T043** — Múltiplas páginas/abas: gerenciar contexto de múltiplas páginas
-- [ ] **T044** — Testes M5: extração de dados reais de sites com JS
+**Objetivo do M5:** Transformar o FAF de um "leitor de páginas" para um "interator". Adicionar capacidade de clicar, preencher formulários, navegar por SPAs, e capturar screenshots.
+
+**Dependências entre tasks:** T039 (click) → T040 (forms usa click) → T041 (screenshot depende de renderização). T042 é independente. T043/T044 são paralelizáveis.
+
+---
+
+### T039 — Click via dispatchEvent (🔴 complexo)
+**Arquivos:** `src/js/dom_bridge.rs`, `src/js/mod.rs`, `src/api/commands.rs`
+
+**O que faz:** Simular click do usuário em elementos da página via `dispatchEvent(new MouseEvent('click'))` no runtime JS. Essencial para interagir com SPAs, paginação, modais, botões "load more".
+
+**Flags:** Nenhuma nova flag global. Click é acionado via JS no REPL/--stdin ou via novo subcomando `click`:
+```bash
+faf click ".btn-comprar" --url https://loja.com/produto
+faf repl --url https://site.com
+> document.querySelector(".pagination a").click()
+```
+
+**Implementação:**
+1. No dom_bridge.rs, estender o objeto Element retornado por querySelector/querySelectorAll com método `.click()`:
+   - `element.click()` → cria `new MouseEvent('click', { bubbles: true, cancelable: true })` e chama `dispatchEvent`
+   - Usar `rquickjs` Function para criar e disparar o evento
+   - Garantir que o evento propaga corretamente (bubbles = true)
+2. Opcional: novo subcomando `click` na CLI (Command::Click):
+   - `faf click ".btn" --url <url>` → fetch, parse, executa scripts, dispara click
+   - Re-fetch da página após click (capturar estado pós-clique)
+   - Suporta `--json`, `--show-status`, `--cache`
+3. Tratar casos especiais:
+   - `<a href="...">` links: click deve navegar (ou retornar URL alvo)
+   - `<button type="submit">`: click em form dispara submit
+   - Elementos `<option>` em `<select>`: click para selecionar
+4. **⚠️ Cuidado:** click pode disparar navegação real (link), popup, ou requisição AJAX. O FAF não executa navegação real após click — apenas retorna o evento disparado + estado do DOM. Para navegação real, o usuário usa `--follow` ou faz novo fetch.
+5. Adicionar ao `inject_dom()` para ficar disponível em REPL e --js scripts
+
+**Testes:**
+- Servidor HTML com botão que muda texto ao clicar → FAF click → texto mudou?
+- Servidor com link que adiciona classe ao ser clicado → FAF click → classe presente?
+- Click em elemento inexistente → erro amigável
+- Teste via REPL/--stdin
+
+**Critério:**
+- `echo 'document.querySelector("button").click()' | faf --url <url> --stdin` → botão clicado
+- `faf click ".btn" --url <url>` → evento disparado
+- `cargo test`, `cargo clippy`
+
+---
+
+### T040 — Formulários: fill, select, submit (🟡 médio)
+**Arquivos:** `src/js/dom_bridge.rs`, `src/api/commands.rs` (subcomando `fill` ou flag `--fill`)
+
+**O que faz:** Preencher campos de formulário, selecionar opções e submeter, tudo via JS bridge. Permite simular login, busca, cadastro.
+
+**Flags/Comando:**
+```bash
+# Modo 1: via JS no REPL
+faf repl --url https://site.com/login
+> document.querySelector("#email").value = "user@test.com"
+> document.querySelector("#senha").value = "123456"
+> document.querySelector("form").submit()
+
+# Modo 2: subcomando fill (opcional, futura expansão)
+# faf fill "input[name=email]" --value "user@test.com" --url ...
+```
+
+**Implementação:**
+1. Garantir que `.value = "texto"` funcione em `<input>`, `<textarea>`, `<select>` via bridge DOM ↔ JS (já deve funcionar com rquickjs)
+2. Opcional: helper `fill_form(selector, data)` no dom_bridge:
+   - Aceita objeto `{ campo: valor }` e preenche automaticamente
+   - Suporta input[type=text/email/password], textarea, select (value), checkbox (checked), radio
+3. `.submit()` em elemento `<form>` → dispara submit (mas **não** segue a ação — retorna method + action para o usuário decidir)
+4. Suporte a `FormData` e `URLSearchParams` no runtime JS (se não existir, criar polyfill)
+
+**Testes:**
+- Servidor com formulário → FAF preenche campos → `.value` reflete o valor setado
+- Select option → .value = "opt2" → option selecionada
+- Checkbox → .checked = true → checked
+
+**Critério:**
+- `echo 'document.querySelector("#email").value = "test@test.com"' | faf --stdin --url <url>` → campo preenchido
+- `echo 'document.querySelector("form").submit()' | faf --stdin --url <url>` → submit disparado
+- `cargo test`, `cargo clippy`
+
+---
+
+### T041 — Screenshot via tiny-skia (🔴 complexo)
+**Arquivos:** `src/render/` (novo módulo), `src/render/mod.rs`, `src/render/screenshot.rs`, `src/api/commands.rs` (subcomando `screenshot`), `Cargo.toml` (tiny-skia, font-kit, image)
+
+**O que faz:** Renderizar o HTML da página em uma imagem PNG usando o engine CSS já existente + tiny-skia para rasterização. Útil para debugging visual, thumbnails, e documentação.
+
+**Flags/Comando:**
+```bash
+faf screenshot https://books.toscrape.com/ --output pagina.png
+faf screenshot https://site.com --width 1920 --height 1080 --output preview.png
+```
+
+**Implementação:**
+1. Criar módulo `src/render/`:
+   - `screenshot.rs` — orquestra renderização: parse HTML → parse CSS → layout → paint
+2. Re-utilizar componentes existentes do CSS engine:
+   - `css::layout::BoxModel` — dimensões dos elementos
+   - `css::style::ComputedStyle` — cores, fontes, display
+   - `css::color::Color` — conversão de cor
+3. Pipeline de renderização:
+   - Parse HTML (já existe) → DOM tree
+   - Parse CSS inline + da página (já existe)
+   - Computar estilos (já existe) → elementos com posição/tamanho
+   - **Paint:** desenhar cada elemento como retângulo com cor de fundo + texto
+   - Usar `tiny-skia` para desenhar pixels em um canvas
+   - Usar `font-kit` ou `rusttype` para renderizar texto nas posições corretas
+4. Output: salvar como PNG via `image` ou `tiny-skia`'s `save_png`
+5. Flags:
+   - `--width` — largura do viewport (default: 1280)
+   - `--height` — altura do viewport (default: 0 = scroll inteiro)
+   - `--output` — caminho do PNG (default: `screenshot-<timestamp>.png`)
+6. **⚠️ Cuidados:**
+   - Isso é uma renderização **aproximada**, não pixel-perfect como Chrome
+   - Prioridade: layout estável e cores corretas, não fidelidade absoluta
+   - Texto sem WebGL ou aceleração — usar font bitmap simples
+   - Elementos com `display: none` não são renderizados
+7. Não tentar renderizar:
+   - Imagens embutidas (`<img>` tags — custo muito alto por enquanto)
+   - Iframes, vídeos, canvas
+   - CSS avançado: flexbox, grid, position, float, overflow
+
+**Testes:**
+- Servidor com HTML simples (h1 colorido, parágrafo) → screenshot existe e não está vazio
+- Servidor com display:none → elemento não aparece na screenshot
+- Servidor sem CSS → renderização com defaults
+- Testar dimensões: 800x600 vs 1920x1080
+
+**Critério:**
+- `faf screenshot https://books.toscrape.com/ --width 800 --output test.png` → test.png gerado com ≥ 1KB
+- `cargo test`, `cargo clippy`
+
+---
+
+### T042 — Watch Mode: monitorar mudanças (🟡 médio)
+**Arquivos:** `src/api/commands.rs` (subcomando `watch`), `src/js/engine.rs` (timeout/loop)
+
+**O que faz:** Monitorar periodicamente uma URL (ou elemento) e notificar quando o conteúdo mudar. Útil para:
+- Preços de produtos que mudam
+- Status de pedidos
+- Disponibilidade de estoque
+- Notícias novas
+
+**Flags/Comando:**
+```bash
+faf watch ".price" --url https://loja.com/produto --interval 30
+# → [14:30:01] £51.77
+# → [14:30:31] £49.99 ⚠️ MUDOU!
+
+faf watch "h1" --url https://site.com --interval 60 --json
+```
+
+**Implementação:**
+1. Subcomando `Command::Watch`:
+   - `selector` — elemento a monitorar (opcional: monitorar página inteira)
+   - `--interval <s>` — intervalo entre verificações (default: 30)
+   - `--max-checks <N>` — parar após N verificações (default: 0 = infinito)
+2. Loop:
+   - Fetch URL + cache (usar `--cache` para não sobrecarregar)
+   - Se selector: extrair texto/atributo do elemento
+   - Comparar com valor anterior
+   - Se mudou: printar ⚠️ com timestamp + valor antigo → novo
+3. Output:
+   - Timestamp + valor atual
+   - Se mudou: destaque visual + diff
+   - `--json` para pipe em scripts
+4. **⚠️ Cuidados:**
+   - Requer loop infinito — usar `tokio::time::interval`
+   - Respeitar rate limiting (não floodar sites)
+   - Cache obrigatório pra evitar múltiplos fetches desnecessários
+   - Timeout: `--timeout` global se aplica
+
+**Testes:**
+- Servidor que muda conteúdo após N requests → watch detecta mudança
+- Watch com --max-checks 2 → para após 2 iterações
+- Watch sem mudança → apenas loga timestamp + valor
+
+**Critério:**
+- `faf watch "h1" --url <url> --interval 1 --max-checks 2` → executa 2 vezes e termina
+- `cargo test`, `cargo clippy`
+
+---
+
+### T043 — Scroll e Navegação via JS (🟢 pequeno)
+**Arquivos:** `src/js/dom_bridge.rs`
+
+**O que faz:** Adicionar métodos de scroll e navegação na bridge DOM para interagir com páginas longas e conteúdo lazy-loaded.
+
+**Métodos:**
+```javascript
+window.scrollTo(0, 1000)
+window.scrollBy(0, 500)
+document.querySelector(".produtos").scrollIntoView()
+```
+
+**Implementação:**
+1. No dom_bridge.rs, expor funções helper no objeto `window`:
+   - `scrollTo(x, y)` — scroll da janela
+   - `scrollBy(x, y)` — scroll relativo
+   - `scrollIntoView(selector)` — scroll até elemento
+2. Todas implementadas via `window.scrollTo()` e `element.scrollIntoView()` no runtime JS
+3. Após scroll, re-extrair conteúdo visível da página (se `--extract` foi usado)
+4. **⚠️ Cuidado:** scroll não carrega novo conteúdo — depende de event listeners na página (scroll infinito). Para isso, combinar com T039 (click em "load more") ou T042 (watch mode).
+
+**Testes:**
+- Servidor com div grande → scrollTo → scrollBy → scrollIntoView executam sem erro
+- scrollIntoView em elemento invisível → erro tratado
+
+**Critério:**
+- `echo 'window.scrollTo(0, document.body.scrollHeight)' | faf --stdin --url <url>` → scroll executado
+- `cargo test`, `cargo clippy`
+
+---
+
+### T044 — Testes M5: integração em site real (🟡 médio)
+**Arquivos:** `tests/m5_test.rs`
+
+**O que fazer:** Testes de integração reais para todas as tasks M5, usando servidor local + site externo para verificar comportamento.
+
+**Testes:**
+1. **click_dispatched** — Servidor HTML com botão que muda texto ao clicar → FAF click no botão → texto mudou
+2. **click_on_link** — Servidor com link → FAF click → link clicado (verificar por classe adicionada via JS)
+3. **fill_form** — Servidor com formulário (input text, select, checkbox) → FAF preenche e verifica valores
+4. **screenshot_generated** — Servidor com HTML simples → FAF screenshot → PNG existe e tem conteúdo
+5. **screenshot_dimensions** — Screenshot com --width 800 → imagem com largura correta
+6. **watch_detect_change** — Servidor que alterna conteúdo → FAF watch detecta mudança
+7. **watch_max_checks** — Watch com --max-checks 3 → executa 3x e termina
+8. **scroll_into_view** — Servidor com conteúdo longo → FAF scrollIntoView → posição mudou
+9. **js_navigation** — Click em link que muda URL hash → window.location.hash mudou
+
+**Critério:**
+- 9+ testes passando
+- `cargo test`, `cargo clippy`
 
 ---
 
@@ -390,7 +619,7 @@ faf follow ".product_pod h3 a" --extract "h3, .price_color" \
 | M3 — JavaScript Engine | 10 | ✅ Concluído |
 | **M4 — Sessão, Interação & Pipeline** | **8** | **✅ Concluído** |
 | **M4.5 — Refinamentos Pós-M4** | **3** | **✅ Concluído** |
-| M5 — Extração Avançada | 6 | 📋 Planejado |
+| M5 — Interação com Páginas | 6 | 📋 Planejado |
 | **Total** | **55** | **39 concluídas · 9 planejadas** |
 
 ## ✅ Critério de conclusão do MVP
