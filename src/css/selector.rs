@@ -136,8 +136,22 @@ fn is_selector_char(c: char) -> bool {
 ///
 /// Uses `scraper::Selector` and `scraper::Html` internally.
 pub fn select_elements(doc: &HtmlDocument, selector_str: &str) -> Result<Vec<ElementMatch>> {
-    let selector = Selector::parse(selector_str)
-        .map_err(|e| anyhow::anyhow!("Invalid selector '{}': {:?}", selector_str, e))?;
+    // M8.5: Filter out pseudo-elements (::before, ::after) which scraper can't parse
+    let cleaned: Vec<&str> = selector_str
+        .split(',')
+        .filter(|s| !s.contains("::"))
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+    
+    if cleaned.is_empty() {
+        return Ok(Vec::new());
+    }
+    
+    let cleaned_selector = cleaned.join(", ");
+    
+    let selector = Selector::parse(&cleaned_selector)
+        .map_err(|e| anyhow::anyhow!("Invalid selector '{}': {:?}", cleaned_selector, e))?;
     let specificity = compute_specificity(selector_str);
 
     let matches: Vec<ElementMatch> = doc

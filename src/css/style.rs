@@ -52,6 +52,7 @@ pub struct ComputedStyle {
     pub align_items: String,
     pub flex_wrap: String,
     pub background_image: String,
+    pub box_sizing: String,
 }
 
 impl Default for ComputedStyle {
@@ -101,6 +102,7 @@ impl Default for ComputedStyle {
             align_items: "stretch".to_string(),
             flex_wrap: "nowrap".to_string(),
             background_image: "none".to_string(),
+            box_sizing: "content-box".to_string(),
         }
     }
 }
@@ -227,6 +229,7 @@ fn apply_declaration(style: &mut ComputedStyle, property: &str, value: &str) {
         "align-items" => style.align_items = value.to_string(),
         "flex-wrap" => style.flex_wrap = value.to_string(),
         "background-image" => style.background_image = value.to_string(),
+        "box-sizing" => style.box_sizing = value.to_string(),
         _ => {}
     }
 }

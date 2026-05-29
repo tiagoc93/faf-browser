@@ -102,17 +102,38 @@ pub fn resolve_margin_shorthand(
 ///
 /// Empty or unrecognised values are treated as `0.0`.
 pub fn compute_box_model(style: &ComputedStyle, container_width: f32, font_size: f32) -> BoxModel {
+    let raw_width = css_to_pixels(&style.width, container_width, font_size);
+    let raw_height = css_to_pixels(&style.height, container_width, font_size);
+    let pad_left = css_to_pixels(&style.padding_left, container_width, font_size);
+    let pad_right = css_to_pixels(&style.padding_right, container_width, font_size);
+    let pad_top = css_to_pixels(&style.padding_top, container_width, font_size);
+    let pad_bottom = css_to_pixels(&style.padding_bottom, container_width, font_size);
+    let border_left = css_to_pixels(&style.border_left_width, container_width, font_size);
+    let border_right = css_to_pixels(&style.border_right_width, container_width, font_size);
+    let border_top = css_to_pixels(&style.border_top_width, container_width, font_size);
+    let border_bottom = css_to_pixels(&style.border_bottom_width, container_width, font_size);
+    
+    // M8.5: box-sizing: border-box — width includes padding and border
+    let (width, height) = if style.box_sizing == "border-box" {
+        (
+            (raw_width - pad_left - pad_right - border_left - border_right).max(0.0),
+            (raw_height - pad_top - pad_bottom - border_top - border_bottom).max(0.0),
+        )
+    } else {
+        (raw_width, raw_height)
+    };
+    
     BoxModel {
-        width: css_to_pixels(&style.width, container_width, font_size),
-        height: css_to_pixels(&style.height, container_width, font_size),
+        width,
+        height,
         margin_top: css_to_pixels(&style.margin_top, container_width, font_size),
         margin_right: css_to_pixels(&style.margin_right, container_width, font_size),
         margin_bottom: css_to_pixels(&style.margin_bottom, container_width, font_size),
         margin_left: css_to_pixels(&style.margin_left, container_width, font_size),
-        padding_top: css_to_pixels(&style.padding_top, container_width, font_size),
-        padding_right: css_to_pixels(&style.padding_right, container_width, font_size),
-        padding_bottom: css_to_pixels(&style.padding_bottom, container_width, font_size),
-        padding_left: css_to_pixels(&style.padding_left, container_width, font_size),
+        padding_top: pad_top,
+        padding_right: pad_right,
+        padding_bottom: pad_bottom,
+        padding_left: pad_left,
     }
 }
 
