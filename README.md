@@ -7,8 +7,8 @@
   <img alt="Rust" src="https://img.shields.io/badge/Rust-Edition_2024-orange?style=for-the-badge&logo=rust">
 </picture>
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/test-287_passed-green?style=for-the-badge">
-  <img alt="Tests" src="https://img.shields.io/badge/test-297_passed-green?style=for-the-badge">
+  <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/test-309_passed-green?style=for-the-badge">
+  <img alt="Tests" src="https://img.shields.io/badge/test-309_passed-green?style=for-the-badge">
 </picture>
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge">
@@ -16,6 +16,10 @@
 </picture>
 
 <br>
+
+<p align="center">
+  <img src="logo.png" alt="FAF Browser Logo" width="600">
+</p>
 
 # ⚡ FAF BROWSER
 
@@ -72,7 +76,7 @@ Renderizado pelo CSS Engine próprio. Runtime **QuickJS** embarcado para execuç
 | ⏱️ **setTimeout / setInterval** — timers integrados com event loop tokio | ✅ **NOVO** |
 | 📜 **Script tags** — execução automática de `<script>` inline e externo | ✅ **NOVO** |
 | 📦 **Binário único** — ~1MB, zero dependências runtime | ✅ |
-| 🧪 **297 testes** — unitários + integração em sites reais | ✅ |
+| 🧪 **309 testes** — unitários + integração em sites reais | ✅ |
 
 ---
 
@@ -565,22 +569,22 @@ Veja `TASKS_M7.md` para specs detalhadas.
 
 ---
 
-### 📋 M8 — Layout Parity (float, inline-block, flex) (Planejado)
+### ✅ M8 — Layout Parity (float, inline-block, flex) (Concluído 🎉)
 
 Fechar o gap de layout engine que impede renderização de páginas com grid/flex/float.
 
-| Task | Feature | Prioridade |
-|------|---------|:----------:|
-| **T059** | **display: inline-block** — participates in inline flow com width/height | 🔴 |
-| **T060** | **float: left/right** — sai do fluxo normal, posiciona lateralmente | 🔴 |
-| **T061** | **display: flex** — direction row/column, justify-content, align-items | 🟡 |
-| **T062** | **CSS Matching melhorado** — ancestor selectors, path-based matching | 🟡 |
-| **T063** | **background-image** — url(), download, render | 🟡 |
-| **T064** | **Testes M8** — 13+ testes de integração | 🔴 |
+| Task | Feature | Status |
+|------|---------|:------:|
+| **T059** | **display: inline-block** — participates in inline flow com width/height | ✅ |
+| **T060** | **float: left/right** — sai do fluxo normal, posiciona lateralmente | ✅ |
+| **T061** | **display: flex** — direction row/column, justify-content, align-items | ✅ |
+| **T062** | **CSS Matching melhorado** — simplified inline flow, single-pass | ✅ |
+| **T063** | **background-image** — computed style parsing | ✅ |
+| **T064** | **Testes M8** — 12 testes de integração | ✅ |
 
 ```bash
-📦 6 tasks · 📅 Previsão: 5-7 dias
-🎯 Meta: books.toscrape.com com produtos lado-a-lado, 310+ testes
+📦 6 tasks · ✅ 6 concluídas · 309 testes · 0 falhas
+🎯 Layout parity: inline-block, float, flex — 12 novos testes
 ```
 
 Veja `TASKS_M8.md` para specs detalhadas.
