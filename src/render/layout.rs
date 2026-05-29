@@ -18,15 +18,9 @@ const FONT_PATHS: &[&str] = &[
 ];
 
 /// Calcula o layout da árvore visual, definindo `rect` de cada nó.
-///
-/// Carrega fontes uma vez (cache) e passa para o layout recursivo,
-/// permitindo medição real de texto com ab_glyph.
 pub fn compute_layout(tree: &mut VisualNode, viewport_width: f32) {
     let font_cache = load_font_cache();
-    let default_font = font_cache
-        .values()
-        .next()
-        .cloned();
+    let default_font = font_cache.values().next().cloned();
     let _ = layout_block(
         tree,
         0.0,
@@ -76,7 +70,6 @@ fn resolve_font<'a>(
         .to_lowercase()
         .replace(' ', "");
 
-    // Busca parcial
     for (key, font) in cache {
         if key.contains(&family_lower) || family_lower.contains(key.as_str()) {
             return Some(font);
@@ -133,16 +126,20 @@ fn resolve_line_height(value: &str, font_size: f32, container_width: f32) -> f32
     if trimmed.is_empty() || trimmed == "normal" || trimmed == "inherit" {
         return font_size * 1.2;
     }
-    // Número puro = multiplicador
     if let Ok(n) = trimmed.parse::<f32>() {
         return font_size * n;
     }
-    // Valor com unidade
     let px = css_to_pixels(trimmed, container_width, font_size);
-    if px > 0.0 { px } else { font_size * 1.2 }
+    if px > 0.0 {
+        px
+    } else {
+        font_size * 1.2
+    }
 }
 
 /// Layout recursivo de um nó block.
+/// 
+/// M8: Suporta float, inline-block, e flex layout.
 #[allow(clippy::too_many_arguments)]
 fn layout_block(
     node: &mut VisualNode,
@@ -153,6 +150,11 @@ fn layout_block(
     font_cache: &HashMap<String, FontArc>,
     default_font: &Option<FontArc>,
 ) -> f32 {
+    // Se for flex container, usar layout flex
+    if node.style.display == "flex" {
+        return layout_flex(node, x, y, available_width, viewport_width, font_cache, default_font);
+    }
+
     let font_size = css_to_pixels(&node.style.font_size, viewport_width, 16.0).max(8.0);
     let bm = compute_box_model(&node.style, available_width, font_size);
 
@@ -173,23 +175,142 @@ fn layout_block(
     let block_y = y + margin_top;
     let content_y = block_y + bm.padding_top;
 
-    // Separar filhos absolute/fixed do fluxo normal
+    // M8: Separar filhos em categorias
     let mut normal_indices: Vec<usize> = Vec::new();
     let mut abs_indices: Vec<usize> = Vec::new();
+    let mut float_left_indices: Vec<usize> = Vec::new();
+    let mut float_right_indices: Vec<usize> = Vec::new();
+    
     for (i, child) in node.children.iter().enumerate() {
         if child.style.position == "absolute" || child.style.position == "fixed" {
             abs_indices.push(i);
+        } else if child.style.float == "left" {
+            float_left_indices.push(i);
+        } else if child.style.float == "right" {
+            float_right_indices.push(i);
         } else {
             normal_indices.push(i);
         }
     }
 
-    // Layout do fluxo normal
-    let mut child_cursor = content_y;
+    // M8: Layout de floats (posicionar antes do fluxo normal)
+    let mut float_cursor_x = content_x;
+    let mut float_cursor_y = content_y;
+    let mut max_float_bottom = content_y;
+
+    // Floats à esquerda: empilha da esquerda para direita
+    for &fi in &float_left_indices {
+        let child_font_size = css_to_pixels(
+            &node.children[fi].style.font_size,
+            viewport_width,
+            font_size,
+        )
+        .max(8.0);
+        let child_bm = compute_box_model(
+            &node.children[fi].style,
+            content_width,
+            child_font_size,
+        );
+        
+        let child_w = if child_bm.width > 0.0 {
+            child_bm.width
+        } else {
+            estimate_text_width(&node.children[fi].text, child_font_size)
+        };
+        let child_h = if child_bm.height > 0.0 {
+            child_bm.height
+        } else {
+            child_font_size * 1.5
+        };
+
+        // Se não cabe na linha, quebra
+        if float_cursor_x + child_w > content_x + content_width {
+            float_cursor_x = content_x;
+            float_cursor_y = max_float_bottom;
+        }
+
+        node.children[fi].rect = Rect::from_xywh(
+            float_cursor_x,
+            float_cursor_y,
+            child_w,
+            child_h,
+        )
+        .unwrap_or(Rect::from_xywh(0.0, 0.0, 0.0, 0.0).unwrap());
+
+        float_cursor_x += child_w;
+        max_float_bottom = max_float_bottom.max(float_cursor_y + child_h);
+    }
+
+    // Floats à direita: empilha da direita para esquerda
+    let mut right_cursor_x = content_x + content_width;
+    let mut right_float_y = content_y;
+    
+    for &fi in &float_right_indices {
+        let child_font_size = css_to_pixels(
+            &node.children[fi].style.font_size,
+            viewport_width,
+            font_size,
+        )
+        .max(8.0);
+        let child_bm = compute_box_model(
+            &node.children[fi].style,
+            content_width,
+            child_font_size,
+        );
+        
+        let child_w = if child_bm.width > 0.0 {
+            child_bm.width
+        } else {
+            estimate_text_width(&node.children[fi].text, child_font_size)
+        };
+        let child_h = if child_bm.height > 0.0 {
+            child_bm.height
+        } else {
+            child_font_size * 1.5
+        };
+
+        right_cursor_x -= child_w;
+        
+        // Se não cabe na linha, quebra
+        if right_cursor_x < content_x {
+            right_cursor_x = content_x + content_width - child_w;
+            right_float_y = max_float_bottom;
+        }
+
+        node.children[fi].rect = Rect::from_xywh(
+            right_cursor_x,
+            right_float_y,
+            child_w,
+            child_h,
+        )
+        .unwrap_or(Rect::from_xywh(0.0, 0.0, 0.0, 0.0).unwrap());
+
+        max_float_bottom = max_float_bottom.max(right_float_y + child_h);
+    }
+
+    // Layout do fluxo normal (começa abaixo dos floats se houver)
+    let mut child_cursor = max_float_bottom;
     let mut prev_child_margin_bottom = 0.0f32;
+    
+    // M8: inline flow state for inline/inline-block children
+    let mut line_x = content_x;
+    let mut line_y = child_cursor;
+    let mut line_height = 0.0f32;
+    let mut processed_any_inline = false;
 
     for &child_idx in &normal_indices {
-        if node.children[child_idx].node_type == NodeType::Block {
+        let child_node_type = node.children[child_idx].node_type.clone();
+        
+        if child_node_type == NodeType::Block {
+            // Flush pending inline line before processing block
+            if processed_any_inline {
+                line_x = content_x;
+                line_y += line_height;
+                line_height = 0.0;
+                processed_any_inline = false;
+            }
+            child_cursor = line_y;
+            
             let child_font_size = css_to_pixels(
                 &node.children[child_idx].style.font_size,
                 viewport_width,
@@ -217,100 +338,74 @@ fn layout_block(
             );
             child_cursor = child_bottom;
             prev_child_margin_bottom = child_bm.margin_bottom;
+            line_y = child_cursor;
+            line_x = content_x;
         } else {
-            // Inline run: coletar inlines consecutivos no fluxo normal
-            let start_pos = child_idx;
-            let mut end_pos = child_idx + 1;
-            // Avançar enquanto o próximo índice normal também é inline e consecutivo
-            while end_pos < node.children.len() {
-                if node.children[end_pos].style.position == "absolute"
-                    || node.children[end_pos].style.position == "fixed"
-                {
-                    end_pos += 1;
-                    continue;
+            // Inline ou InlineBlock
+            let child = &mut node.children[child_idx];
+            let child_font_size =
+                css_to_pixels(&child.style.font_size, viewport_width, font_size).max(8.0);
+            let child_lh = resolve_line_height(&child.style.line_height, child_font_size, viewport_width);
+
+            let mut tw = text_width(&child.text, child_font_size, &child.style.font_family, font_cache, default_font);
+            let mut th = child_lh;
+
+            if child_node_type == NodeType::InlineBlock {
+                let child_bm = compute_box_model(&child.style, content_width, child_font_size);
+                if child_bm.width > 0.0 {
+                    tw = child_bm.width;
                 }
-                if node.children[end_pos].node_type == NodeType::Inline {
-                    end_pos += 1;
+                if child_bm.height > 0.0 {
+                    th = child_bm.height;
+                }
+            }
+
+            // Quebra de linha se exceder largura
+            if processed_any_inline && line_x + tw > content_x + content_width && tw > 0.0 {
+                line_x = content_x;
+                line_y += line_height;
+                line_height = 0.0;
+            }
+
+            child.rect = Rect::from_xywh(line_x, line_y, tw, th)
+                .unwrap_or(Rect::from_xywh(0.0, 0.0, 0.0, 0.0).unwrap());
+
+            if !child.children.is_empty() {
+                if child_node_type == NodeType::InlineBlock {
+                    let saved_x = child.rect.x();
+                    let saved_y = child.rect.y();
+                    let _ = layout_block(child, saved_x, saved_y, tw, viewport_width, font_cache, default_font);
+                    child.rect = Rect::from_xywh(saved_x, saved_y, child.rect.width().max(tw), child.rect.height().max(th))
+                        .unwrap_or(child.rect);
                 } else {
-                    break;
+                    layout_inline_children(child, line_x, line_y, content_width, viewport_width, font_cache, default_font);
                 }
             }
 
-            let mut line_x = content_x;
-            let mut line_y = child_cursor;
-            let mut line_height = 0.0f32;
-
-            for idx in start_pos..end_pos {
-                if node.children[idx].style.position == "absolute"
-                    || node.children[idx].style.position == "fixed"
-                {
-                    continue;
-                }
-                if node.children[idx].node_type != NodeType::Inline {
-                    break;
-                }
-
-                let child = &mut node.children[idx];
-                let child_font_size =
-                    css_to_pixels(&child.style.font_size, viewport_width, font_size).max(8.0);
-                let child_lh = resolve_line_height(
-                    &child.style.line_height,
-                    child_font_size,
-                    viewport_width,
-                );
-
-                let tw = text_width(
-                    &child.text,
-                    child_font_size,
-                    &child.style.font_family,
-                    font_cache,
-                    default_font,
-                );
-
-                // Quebra de linha
-                if line_x + tw > content_x + content_width && tw > 0.0 && line_x > content_x {
-                    line_x = content_x;
-                    line_y += line_height;
-                    line_height = 0.0;
-                }
-
-                child.rect = Rect::from_xywh(line_x, line_y, tw, child_lh)
-                    .unwrap_or(Rect::from_xywh(0.0, 0.0, 0.0, 0.0).unwrap());
-
-                if !child.children.is_empty() {
-                    layout_inline_children(
-                        child,
-                        line_x,
-                        line_y,
-                        content_width,
-                        viewport_width,
-                        font_cache,
-                        default_font,
-                    );
-                }
-
-                line_x += tw;
-                line_height = line_height.max(child_lh);
-            }
-
-            // Atualizar child_idx para pular os inlines processados
-            // (o for loop vai incrementar de qualquer forma)
-            child_cursor = line_y + line_height;
+            line_x += tw;
+            line_height = line_height.max(th);
+            processed_any_inline = true;
             prev_child_margin_bottom = 0.0;
         }
     }
+    
+    // Flush final inline line
+    if processed_any_inline {
+        line_y += line_height;
+    }
+    child_cursor = line_y;
 
     let content_height = (child_cursor - content_y).max(0.0);
     let block_height = if bm.height > 0.0 {
         bm.height
     } else {
-        content_height + bm.padding_top + bm.padding_bottom
+        let floats_height = max_float_bottom - content_y;
+        content_height.max(floats_height) + bm.padding_top + bm.padding_bottom
     };
 
     let mut final_x = block_x;
     let mut final_y = block_y;
 
-    // Position relativa (já existia)
     if node.style.position == "relative" {
         if node.style.top != "auto" {
             let top_px = css_to_pixels(&node.style.top, viewport_width, font_size);
@@ -341,12 +436,9 @@ fn layout_block(
         .max(8.0);
         let child_bm = compute_box_model(&child.style, content_width, child_font_size);
 
-        // Containing block
         let (cb_x, cb_y, cb_w, cb_h) = if child.style.position == "fixed" {
-            // Fixed: viewport
             (0.0f32, 0.0f32, viewport_width, viewport_width)
         } else {
-            // Absolute: nearest positioned ancestor = current node (simplification)
             (
                 final_x,
                 final_y,
@@ -362,7 +454,6 @@ fn layout_block(
             let r = css_to_pixels(&child.style.right, cb_w, child_font_size);
             (cb_w - l - r).max(0.0)
         } else {
-            // Shrink-to-fit: usar largura do conteúdo
             content_width
         };
 
@@ -373,7 +464,7 @@ fn layout_block(
             let b = css_to_pixels(&child.style.bottom, cb_h, child_font_size);
             (cb_h - t - b).max(0.0)
         } else {
-            block_height // fallback
+            block_height
         };
 
         let mut abs_x = cb_x;
@@ -396,7 +487,6 @@ fn layout_block(
         child.rect = Rect::from_xywh(abs_x, abs_y, child_w, child_h)
             .unwrap_or(Rect::from_xywh(0.0, 0.0, 0.0, 0.0).unwrap());
 
-        // Recursar layout dos filhos do absolute
         let _ = layout_block(
             child,
             abs_x,
@@ -407,6 +497,178 @@ fn layout_block(
             default_font,
         );
     }
+
+    block_y + block_height
+}
+
+/// M8: Layout flex (básico).
+/// Suporta flex-direction: row/column, justify-content, align-items, flex-wrap.
+#[allow(clippy::too_many_arguments)]
+fn layout_flex(
+    node: &mut VisualNode,
+    x: f32,
+    y: f32,
+    available_width: f32,
+    viewport_width: f32,
+    font_cache: &HashMap<String, FontArc>,
+    default_font: &Option<FontArc>,
+) -> f32 {
+    let font_size = css_to_pixels(&node.style.font_size, viewport_width, 16.0).max(8.0);
+    let bm = compute_box_model(&node.style, available_width, font_size);
+
+    let margin_left = bm.margin_left;
+    let margin_top = bm.margin_top;
+
+    let block_x = x + margin_left;
+    let block_width = if bm.width > 0.0 {
+        bm.width
+    } else {
+        (available_width - margin_left - bm.margin_right).max(0.0)
+    };
+
+    let content_x = block_x + bm.padding_left;
+    let content_width = (block_width - bm.padding_left - bm.padding_right).max(0.0);
+
+    let block_y = y + margin_top;
+    let content_y = block_y + bm.padding_top;
+
+    let is_row = node.style.flex_direction != "column";
+    let justify = node.style.justify_content.clone();
+    let align = node.style.align_items.clone();
+    let wrap = node.style.flex_wrap == "wrap";
+
+    // Filhos normais (não absolute/fixed)
+    let normal_indices: Vec<usize> = node
+        .children
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| c.style.position != "absolute" && c.style.position != "fixed")
+        .map(|(i, _)| i)
+        .collect();
+
+    // Calcular tamanhos dos filhos
+    let mut child_sizes: Vec<(usize, f32, f32)> = Vec::new();
+    for &idx in &normal_indices {
+        let child = &node.children[idx];
+        let child_font_size = css_to_pixels(&child.style.font_size, viewport_width, font_size).max(8.0);
+        let child_bm = compute_box_model(&child.style, content_width, child_font_size);
+        
+        let w = if child_bm.width > 0.0 {
+            child_bm.width
+        } else {
+            let tw = text_width(&child.text, child_font_size, &child.style.font_family, font_cache, default_font);
+            tw.max(child_font_size * 2.0)
+        };
+        let h = if child_bm.height > 0.0 {
+            child_bm.height
+        } else {
+            child_font_size * 1.5
+        };
+        child_sizes.push((idx, w, h));
+    }
+
+    // Distribuir filhos em linhas/colunas
+    let mut lines: Vec<Vec<(usize, f32, f32)>> = Vec::new();
+    let mut current_line: Vec<(usize, f32, f32)> = Vec::new();
+    let mut current_line_size = 0.0f32;
+
+    for (idx, w, h) in child_sizes {
+        let main_size = if is_row { w } else { h };
+        
+        if wrap && current_line_size + main_size > content_width && !current_line.is_empty() {
+            lines.push(current_line);
+            current_line = Vec::new();
+            current_line_size = 0.0;
+        }
+        
+        current_line_size += main_size;
+        current_line.push((idx, w, h));
+    }
+    if !current_line.is_empty() {
+        lines.push(current_line);
+    }
+
+    // Posicionar filhos
+    let mut cross_cursor = content_y;
+    
+    for line in &lines {
+        let line_main_size: f32 = line.iter().map(|&(_, w, h)| if is_row { w } else { h }).sum();
+        let line_cross_size: f32 = line.iter().map(|&(_, w, h)| if is_row { h } else { w }).fold(0.0f32, f32::max);
+        
+        // justify-content: distribuir espaço na main axis
+        let free_space = (content_width - line_main_size).max(0.0);
+        let (gap, start_offset) = match justify.as_str() {
+            "center" => (0.0, free_space / 2.0),
+            "flex-end" => (0.0, free_space),
+            "space-between" => {
+                if line.len() > 1 {
+                    (free_space / (line.len() - 1) as f32, 0.0)
+                } else {
+                    (0.0, 0.0)
+                }
+            }
+            "space-around" => {
+                let g = free_space / line.len() as f32;
+                (g, g / 2.0)
+            }
+            _ => (0.0, 0.0), // flex-start
+        };
+
+        let mut main_cursor = content_x + start_offset;
+        
+        for &(idx, w, h) in line {
+            let child = &mut node.children[idx];
+            
+            let (cx, cy, cw, ch) = if is_row {
+                let cy = match align.as_str() {
+                    "center" => cross_cursor + (line_cross_size - h) / 2.0,
+                    "flex-end" => cross_cursor + line_cross_size - h,
+                    _ => cross_cursor, // flex-start, stretch
+                };
+                (main_cursor, cy, w, h)
+            } else {
+                let cx = match align.as_str() {
+                    "center" => content_x + (content_width - w) / 2.0,
+                    "flex-end" => content_x + content_width - w,
+                    _ => content_x,
+                };
+                (cx, main_cursor, w, h)
+            };
+
+            child.rect = Rect::from_xywh(cx, cy, cw, ch)
+                .unwrap_or(Rect::from_xywh(0.0, 0.0, 0.0, 0.0).unwrap());
+
+            // Recursar para filhos
+            let _ = layout_block(
+                child,
+                cx,
+                cy,
+                cw,
+                viewport_width,
+                font_cache,
+                default_font,
+            );
+
+            main_cursor += if is_row { w } else { h } + gap;
+        }
+        
+        cross_cursor += line_cross_size;
+    }
+
+    let content_height = (cross_cursor - content_y).max(0.0);
+    let block_height = if bm.height > 0.0 {
+        bm.height
+    } else {
+        content_height + bm.padding_top + bm.padding_bottom
+    };
+
+    node.rect = Rect::from_xywh(
+        block_x,
+        block_y,
+        block_width.max(0.0),
+        block_height.max(0.0),
+    )
+    .unwrap_or(Rect::from_xywh(0.0, 0.0, 0.0, 0.0).unwrap());
 
     block_y + block_height
 }
@@ -464,7 +726,6 @@ fn layout_inline_children(
         line_height = line_height.max(child_lh);
     }
 
-    // Ajusta o rect do nó inline pai para englobar seus filhos
     if !node.children.is_empty() {
         let min_x = node
             .children
@@ -548,7 +809,10 @@ mod tests {
         let mut unique_ys = ys.clone();
         unique_ys.sort_by(|a, b| a.partial_cmp(b).unwrap());
         unique_ys.dedup_by(|a, b| (*a - *b).abs() < 1.0);
-        assert!(!unique_ys.is_empty(), "deve haver pelo menos uma linha de texto");
+        assert!(
+            !unique_ys.is_empty(),
+            "deve haver pelo menos uma linha de texto"
+        );
     }
 
     #[test]
@@ -565,6 +829,10 @@ mod tests {
         let divs: Vec<_> = body.children.iter().filter(|c| c.tag == "div").collect();
         assert_eq!(divs.len(), 2);
         let gap = divs[1].rect.y() - divs[0].rect.y();
-        assert!(gap >= 20.0, "gap deve refletir margin collapsing, gap={}", gap);
+        assert!(
+            gap >= 20.0,
+            "gap deve refletir margin collapsing, gap={}",
+            gap
+        );
     }
 }

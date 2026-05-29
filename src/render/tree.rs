@@ -4,11 +4,12 @@ use crate::dom::HtmlDocument;
 use std::collections::HashMap;
 use tiny_skia::Rect;
 
-/// Tipo de nó visual: Block ou Inline.
+/// Tipo de nó visual: Block, Inline, ou InlineBlock.
 #[derive(Debug, Clone, PartialEq)]
 pub enum NodeType {
     Block,
     Inline,
+    InlineBlock,
 }
 
 /// Nó da árvore visual de layout.
@@ -131,11 +132,13 @@ fn is_skip_tag(tag: &str) -> bool {
 fn classify_node_type(tag: &str, style: &ComputedStyle) -> NodeType {
     let display = style.display.trim();
     if display.is_empty() {
-        // Sem display explícito: usar heurística da tag
         return tag_heuristic(tag);
     }
     if display == "inline" {
         return NodeType::Inline;
+    }
+    if display == "inline-block" {
+        return NodeType::InlineBlock;
     }
     if display == "block"
         || display == "flex"
@@ -147,11 +150,9 @@ fn classify_node_type(tag: &str, style: &ComputedStyle) -> NodeType {
         return NodeType::Block;
     }
     if display == "none" {
-        // Já filtrado acima, mas por segurança
         return NodeType::Block;
     }
 
-    // Heurística padrão baseada na tag
     tag_heuristic(tag)
 }
 

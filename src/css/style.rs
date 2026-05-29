@@ -45,6 +45,13 @@ pub struct ComputedStyle {
     pub line_height: String,
     pub font_weight: String,
     pub overflow: String,
+    pub float: String,
+    pub clear: String,
+    pub flex_direction: String,
+    pub justify_content: String,
+    pub align_items: String,
+    pub flex_wrap: String,
+    pub background_image: String,
 }
 
 impl Default for ComputedStyle {
@@ -87,6 +94,13 @@ impl Default for ComputedStyle {
             line_height: "normal".to_string(),
             font_weight: "normal".to_string(),
             overflow: "visible".to_string(),
+            float: "none".to_string(),
+            clear: "none".to_string(),
+            flex_direction: "row".to_string(),
+            justify_content: "flex-start".to_string(),
+            align_items: "stretch".to_string(),
+            flex_wrap: "nowrap".to_string(),
+            background_image: "none".to_string(),
         }
     }
 }
@@ -206,6 +220,13 @@ fn apply_declaration(style: &mut ComputedStyle, property: &str, value: &str) {
         "line-height" => style.line_height = value.to_string(),
         "font-weight" => style.font_weight = value.to_string(),
         "overflow" => style.overflow = value.to_string(),
+        "float" => style.float = value.to_string(),
+        "clear" => style.clear = value.to_string(),
+        "flex-direction" => style.flex_direction = value.to_string(),
+        "justify-content" => style.justify_content = value.to_string(),
+        "align-items" => style.align_items = value.to_string(),
+        "flex-wrap" => style.flex_wrap = value.to_string(),
+        "background-image" => style.background_image = value.to_string(),
         _ => {}
     }
 }
