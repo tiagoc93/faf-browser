@@ -382,3 +382,48 @@ fn test_m8_new_fields_defaults() {
     assert_eq!(style.flex_wrap, "nowrap");
     assert_eq!(style.background_image, "none");
 }
+
+// === M8.5: float grid test ===
+
+#[test]
+fn test_float_grid_four_columns() {
+    let html = r#"<html><head><style>
+        * { box-sizing: border-box; }
+        .row { width: 800px; }
+        .col { float: left; width: 25%; padding: 0 15px; }
+        .col-inner { background: #eee; height: 100px; }
+    </style></head><body>
+        <div class="row">
+            <div class="col"><div class="col-inner">1</div></div>
+            <div class="col"><div class="col-inner">2</div></div>
+            <div class="col"><div class="col-inner">3</div></div>
+            <div class="col"><div class="col-inner">4</div></div>
+        </div>
+    </body></html>"#;
+    let doc = faf_browser::dom::HtmlDocument::parse(html);
+    let css_text = doc.extract_css().unwrap_or_default();
+    let stylesheet = faf_browser::css::parser::parse_css(&css_text).unwrap();
+    let computed = faf_browser::css::style::compute_styles(&doc, &stylesheet);
+    let mut tree = faf_browser::render::tree::build_layout_tree(&doc, &computed);
+    faf_browser::render::layout::compute_layout(&mut tree, 800.0);
+
+    let body = tree.children.iter().find(|c| c.tag == "body").unwrap();
+    let row = body.children.iter().find(|c| c.tag == "div").unwrap();
+    let cols: Vec<_> = row.children.iter().filter(|c| c.tag == "div").collect();
+    
+    if cols.len() != 4 {
+        for (i, c) in row.children.iter().enumerate() {
+            eprintln!("row child[{}]: tag={:?} type={:?} float={} x={:.0} y={:.0} w={:.0}", 
+                i, c.tag, c.node_type, c.style.float, c.rect.x(), c.rect.y(), c.rect.width());
+        }
+        panic!("Expected 4 columns, got {}", cols.len());
+    }
+    
+    let first_y = cols[0].rect.y();
+    for (i, c) in cols.iter().enumerate() {
+        assert!((c.rect.y() - first_y).abs() < 2.0, "col {} should be same row: y={} first_y={}", i, c.rect.y(), first_y);
+    }
+    for i in 1..cols.len() {
+        assert!(cols[i].rect.x() > cols[i-1].rect.x(), "col {} x={} should be right of col {} x={}", i, cols[i].rect.x(), i-1, cols[i-1].rect.x());
+    }
+}

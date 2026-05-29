@@ -27,6 +27,7 @@ pub struct Declaration {
 /// reconstructed exactly as written.
 pub fn parse_css(css_text: &str) -> Result<Stylesheet> {
     let mut rules = Vec::new();
+    let mut media_css = String::new(); // M8.5: collect inner CSS from @media rules
     let chars: Vec<char> = css_text.chars().collect();
     let mut i = 0;
 
@@ -49,9 +50,15 @@ pub fn parse_css(css_text: &str) -> Result<Stylesheet> {
             continue;
         }
 
-        // Skip at-rules (@media, @import, @keyframes, @font-face, etc.)
+        // M8.5: Process @media rules instead of skipping them
         if chars[i] == '@' {
-            i = skip_at_rule(&chars, i)?;
+            let result = extract_media_rules(&chars, i, css_text)?;
+            i = result.0;
+            if let Some(inner_css) = result.1 {
+                // Append inner CSS to be parsed with the rest
+                media_css.push_str(&inner_css);
+                media_css.push('\n');
+            }
             continue;
         }
 
@@ -134,16 +141,30 @@ pub fn parse_css(css_text: &str) -> Result<Stylesheet> {
         });
     }
 
+    // M8.5: Parse CSS extracted from @media rules (desktop-first: min-width queries)
+    if !media_css.is_empty() {
+        let media_sheet = parse_css(&media_css)?;
+        rules.extend(media_sheet.rules);
+    }
+
     Ok(Stylesheet { rules })
 }
 
-fn skip_at_rule(chars: &[char], mut i: usize) -> Result<usize> {
-    // Skip until we hit ';' or '{'
-    while i < chars.len() && chars[i] != ';' && chars[i] != '{' {
+/// M8.5: Extract inner CSS from @media rules that match our viewport.
+/// Returns (new_index, optional_inner_css).
+/// For now, extracts all @media screen rules (assumes desktop viewport >= 768px).
+fn extract_media_rules(chars: &[char], mut i: usize, css_text: &str) -> Result<(usize, Option<String>)> {
+    let start = i;
+    // Skip "@media" token
+    while i < chars.len() && chars[i] != '{' && chars[i] != ';' {
         i += 1;
     }
+    let at_rule = css_text[start..i].trim().to_string();
+    
     if i < chars.len() && chars[i] == '{' {
+        // Find matching closing brace
         let mut depth = 1;
+        let body_start = i + 1;
         i += 1;
         while i < chars.len() && depth > 0 {
             if chars[i] == '{' {
@@ -153,10 +174,27 @@ fn skip_at_rule(chars: &[char], mut i: usize) -> Result<usize> {
             }
             i += 1;
         }
-    } else if i < chars.len() && chars[i] == ';' {
+        let body_end = i - 1; // position of closing '}'
+        
+        // Extract rules: only @media (screen), skip @keyframes, @font-face, @import
+        let at_lower = at_rule.to_lowercase();
+        if !at_lower.starts_with("@media") {
+            return Ok((i, None)); // skip non-media at-rules
+        }
+        let is_print = at_rule.contains("print");
+        if !is_print {
+            let inner = css_text[body_start..body_end].to_string();
+            return Ok((i, Some(inner)));
+        }
+        return Ok((i, None));
+    }
+    
+    // No body (like @import), skip to ;
+    while i < chars.len() && chars[i] != ';' {
         i += 1;
     }
-    Ok(i)
+    if i < chars.len() { i += 1; }
+    Ok((i, None))
 }
 
 fn parse_declarations(decl_text: &str) -> Result<Vec<Declaration>> {
@@ -337,9 +375,11 @@ mod tests {
     fn test_ignore_at_rules_media() {
         let css = "@media screen { h1 { color: red; } } p { color: blue; }";
         let sheet = parse_css(css).unwrap();
-        assert_eq!(sheet.rules.len(), 1);
-        assert_eq!(sheet.rules[0].selectors, "p");
-        assert_eq!(sheet.rules[0].declarations[0].value, "blue");
+        // M8.5: @media inner rules are now extracted, so we get 2 rules (h1 + p)
+        assert_eq!(sheet.rules.len(), 2);
+        // h1 comes from media, p is direct
+        assert!(sheet.rules.iter().any(|r| r.selectors.contains("h1")));
+        assert!(sheet.rules.iter().any(|r| r.selectors.contains("p")));
     }
 
     #[test]
