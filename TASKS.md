@@ -1537,7 +1537,59 @@ cargo clippy  # 0 warnings
 | **M4 — Sessão, Interação & Pipeline** | **8** | **✅ Concluído** |
 | **M4.5 — Refinamentos Pós-M4** | **3** | **✅ Concluído** |
 | **M5 — Interação com Páginas** | **6** | **✅ Concluído** |
-| **Total** | **61** | **49 concluídas · 0 planejadas** |
+| **Total** | **70** | **58 concluídas · 2 pendentes** |
+
+---
+
+## 📋 M8.5 — Fidelidade Visual (9 tasks · ✅ Concluído)
+
+**Objetivo:** Atingir paridade visual com Playwright/Chromium na renderização da página https://books.toscrape.com, atacando discrepâncias do CSS Engine próprio.
+
+| Task | Descrição | Status |
+|------|-----------|--------|
+| **T065** | `box-sizing: border-box` — ComputedStyle + compute_box_model | ✅ |
+| **T066** | Seletor universal `*` — aplicar regras globais (ex: `* { box-sizing: border-box }`) | ✅ |
+| **T067** | Filtrar pseudo-elementos `::before/::after` no select_elements | ✅ |
+| **T068** | Extrair CSS de @media queries (min-width 768px+) | ✅ |
+| **T069** | Suporte a `background-image` no ComputedStyle | ✅ |
+| **T070** | Strip de IE hacks `\9` / `\0` no `css_to_pixels` | ✅ |
+| **T071** | `safe_fill_rect()` — clamp de coordenadas ao pixmap (evita crash hairline_aa) | ✅ |
+| **T072** | `block_in_place` no comando screenshot (evita crash tokio runtime) | ✅ |
+| **T073** | Fallback 100×100 para `<img>` sem dimensões CSS explícitas | ✅ |
+
+**Métricas:** 310 testes, binário ~8.2MB, push feito.
+
+---
+
+## 📋 M8.6 — Diagnóstico: Imagens na Books To Scrape (Em andamento)
+
+**Contexto:** As imagens da books.toscrape.com não aparecem porque:
+
+1. ✅ **`>` combinator**: `scraper::Selector` já suporta nativamente — NÃO precisa implementar.  
+   Evidência: `scraper::Selector::parse(".thumbnail > img")` retorna Ok e matcha corretamente em teste isolado.
+
+2. ⚠️ **267 regras com `>`** no CSS da página, mas apenas **6 casam** elementos.  
+   Causa: regras com `:hover`, `:before`, `:after` falham no `scraper::Selector::parse` e a regra INTEIRA (incluindo partes sem pseudo) é descartada.
+
+3. ✅ **`.thumbnail { display: block }`** (sem `>`) já funciona — imagens ganham `display: block`.
+
+4. ❌ **Dimensão zero**: Imagens com `display: block` mas sem `width`/`height` explícito no CSS → `compute_box_model` retorna 0×0 → invisíveis.
+
+5. 🔧 **Fix aplicado**: Fallback 100×100 para `<img>` no `layout_block` + `css_to_pixels` com strip de `\9`.
+
+### Tasks pendentes:
+
+| Task | Descrição | Status |
+|------|-----------|--------|
+| **T074** | Corrigir colapso de altura no layout quando imagens têm fallback 100×100 | 🔴 Pendente |
+| **T075** | Filtrar pseudo-classes (`:hover`, `:focus`) nos seletores (como já faz com `::before`) | 🔴 Pendente |
+| **T076** | Baixar imagens e usar dimensões intrínsecas reais (substituir fallback 100×100 burro) | 🔴 Pendente |
+
+**Diagnóstico completo:** 2329 regras CSS parseadas, 267 com `>`, apenas 6 casam (as outras 261 contêm pseudo-classes/elementos que quebram o seletor INTEIRO no `scraper::Selector::parse` — mesmo que apenas UMA parte da lista tenha `:hover`).
+
+**Solução para T075:** Na função `select_elements()`, expandir o filtro de `::` para também remover partes com `:hover`, `:focus`, `:active`, `:before`, `:after`, `:first-child`, etc.
+
+
 
 ## ✅ Critério de conclusão do MVP
 

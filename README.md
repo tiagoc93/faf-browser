@@ -589,6 +589,56 @@ Fechar o gap de layout engine que impede renderização de páginas com grid/fle
 
 Veja `TASKS_M8.md` para specs detalhadas.
 
+---
+
+### 🔧 M8.5 — Fidelidade Visual (Concluído 🎉)
+
+Correções para atingir paridade visual com Playwright/Chromium na página books.toscrape.com.
+
+| Task | Feature | Status |
+|------|---------|:------:|
+| **T065** | `box-sizing: border-box` — computado no box model | ✅ |
+| **T066** | Seletor universal `*` — regras globais CSS | ✅ |
+| **T067** | Filtrar pseudo-elementos `::before/::after` | ✅ |
+| **T068** | Extrair CSS de @media queries (min-width) | ✅ |
+| **T069** | Suporte a `background-image` | ✅ |
+| **T070** | Strip IE hacks `\9` / `\0` no `css_to_pixels` | ✅ |
+| **T071** | `safe_fill_rect()` — previne crash tiny-skia | ✅ |
+| **T072** | `block_in_place` — previne crash tokio | ✅ |
+| **T073** | Fallback 100×100 para `<img>` sem dimensões | ✅ |
+
+```bash
+📦 9 tasks · ✅ 9 concluídas · 310 testes · 0 falhas
+🛡️ Zero crashes: safe_fill_rect + block_in_place
+```
+
+---
+
+### 🩺 M8.6 — Diagnóstico: Imagens na Books To Scrape (Em andamento)
+
+#### Descobertas
+
+| Descoberta | Detalhe |
+|------------|---------|
+| ✅ **`>` combinator** | Já funciona! `scraper::Selector` suporta nativamente |
+| ⚠️ **Pseudo-classes** | 261 de 267 regras com `>` falham por conterem `:hover`, `:before`, `:after` |
+| ✅ **`.thumbnail { display: block }`** | Já aplica corretamente nas imagens |
+| ❌ **Dimensão zero** | Imagens ganham `display: block` mas sem width/height → 0×0 |
+
+#### Causa raiz
+
+O `scraper::Selector::parse()` rejeita o seletor INTEIRO se qualquer parte contiver pseudo-classes não suportadas. Ex: `.thumbnail > img, .thumbnail a > img:hover` → a 2ª parte quebra tudo.
+
+#### Tasks pendentes
+
+| Task | Descrição |
+|------|-----------|
+| **T074** | Corrigir colapso de altura com fallback 100×100 |
+| **T075** | Filtrar `:hover`, `:focus`, `:before`, `:after` nos seletores |
+| **T076** | Dimensões intrínsecas reais (baixar imagem → usar w×h nativo) |
+
+Veja `TASKS.md` para o diagnóstico completo e plano detalhado.
+
 ## 🧪 Testes
 
 ```bash

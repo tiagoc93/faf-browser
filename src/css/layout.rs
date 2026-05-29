@@ -25,7 +25,12 @@ pub struct BoxModel {
 /// * `"10pt"` → `10.0 * 1.333`
 /// * Fallback: try to parse as a bare float, otherwise `0.0`
 pub fn css_to_pixels(value: &str, container_width: f32, font_size: f32) -> f32 {
+    // Strip IE hacks: \9, \0, \9\0
     let trimmed = value.trim();
+    let trimmed = trimmed.trim_end_matches("\\9\\0");
+    let trimmed = trimmed.trim_end_matches("\\9");
+    let trimmed = trimmed.trim_end_matches("\\0");
+    let trimmed = trimmed.trim();
     if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("auto") {
         return 0.0;
     }

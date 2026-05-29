@@ -252,6 +252,24 @@ pub fn render_to_image_with_base(
     Ok(())
 }
 
+/// Preenche um retângulo com segurança, clampando ao pixmap.
+fn safe_fill_rect(pixmap: &mut Pixmap, x: f32, y: f32, w: f32, h: f32, paint: &Paint) {
+    let mut px = x.max(0.0);
+    let mut py = y.max(0.0);
+    let mut pw = (w - (px - x)).max(0.5);
+    let mut ph = (h - (py - y)).max(0.5);
+    let max_w = pixmap.width() as f32 - px;
+    let max_h = pixmap.height() as f32 - py;
+    pw = pw.min(max_w);
+    ph = ph.min(max_h);
+    if pw <= 0.0 || ph <= 0.0 {
+        return;
+    }
+    if let Some(rect) = Rect::from_xywh(px, py, pw, ph) {
+        pixmap.fill_rect(rect, paint, Transform::identity(), None);
+    }
+}
+
 /// Renderiza um nó visual e seus filhos recursivamente.
 #[allow(clippy::too_many_arguments)]
 fn render_node(
@@ -277,9 +295,11 @@ fn render_node(
         return;
     }
 
-    // Limitar ao bounds do pixmap
-    let draw_w = w.min(pm_width as f32 - x.max(0.0));
-    let draw_h = h.min(pm_height as f32 - y.max(0.0));
+    // Clamp x/y para >= 0 e w/h para caber dentro do pixmap
+    let clamped_x = x.max(0.0);
+    let clamped_y = y.max(0.0);
+    let draw_w = (x + w).min(pm_width as f32) - clamped_x;
+    let draw_h = (y + h).min(pm_height as f32) - clamped_y;
 
     // Aplicar clip se houver (T055 overflow:hidden)
     let effective_clip = if let Some(clip) = clip_rect {
@@ -299,7 +319,7 @@ fn render_node(
         None
     };
 
-    if draw_w > 0.0 && draw_h > 0.0 && y < pm_height as f32 && x < pm_width as f32 {
+    if draw_w > 0.0 && draw_h > 0.0 {
         // Desenhar background-color
         if !node.style.background_color.is_empty()
             && node.style.background_color != "transparent"
@@ -307,9 +327,7 @@ fn render_node(
         {
             let mut bg_paint = Paint::default();
             bg_paint.set_color_rgba8(color.r, color.g, color.b, (color.a * 255.0) as u8);
-            if let Some(rect) = Rect::from_xywh(x, y, draw_w, draw_h) {
-                pixmap.fill_rect(rect, &bg_paint, Transform::identity(), None);
-            }
+            safe_fill_rect(pixmap, clamped_x, clamped_y, draw_w, draw_h, &bg_paint);
         }
 
         // Desenhar bordas
@@ -330,9 +348,7 @@ fn render_node(
         {
             let mut paint = Paint::default();
             paint.set_color_rgba8(color.r, color.g, color.b, (color.a * 255.0) as u8);
-            if let Some(rect) = Rect::from_xywh(x, y, draw_w, border_top_w) {
-                pixmap.fill_rect(rect, &paint, Transform::identity(), None);
-            }
+            safe_fill_rect(pixmap, clamped_x, clamped_y, draw_w, border_top_w, &paint);
         }
         if border_bottom_w > 0.0
             && node.style.border_bottom_style != "none"
@@ -341,11 +357,7 @@ fn render_node(
         {
             let mut paint = Paint::default();
             paint.set_color_rgba8(color.r, color.g, color.b, (color.a * 255.0) as u8);
-            if let Some(rect) =
-                Rect::from_xywh(x, y + draw_h - border_bottom_w, draw_w, border_bottom_w)
-            {
-                pixmap.fill_rect(rect, &paint, Transform::identity(), None);
-            }
+            safe_fill_rect(pixmap, clamped_x, clamped_y + draw_h - border_bottom_w, draw_w, border_bottom_w, &paint);
         }
         if border_left_w > 0.0
             && node.style.border_left_style != "none"
@@ -354,9 +366,7 @@ fn render_node(
         {
             let mut paint = Paint::default();
             paint.set_color_rgba8(color.r, color.g, color.b, (color.a * 255.0) as u8);
-            if let Some(rect) = Rect::from_xywh(x, y, border_left_w, draw_h) {
-                pixmap.fill_rect(rect, &paint, Transform::identity(), None);
-            }
+            safe_fill_rect(pixmap, clamped_x, clamped_y, border_left_w, draw_h, &paint);
         }
         if border_right_w > 0.0
             && node.style.border_right_style != "none"
@@ -365,11 +375,7 @@ fn render_node(
         {
             let mut paint = Paint::default();
             paint.set_color_rgba8(color.r, color.g, color.b, (color.a * 255.0) as u8);
-            if let Some(rect) =
-                Rect::from_xywh(x + draw_w - border_right_w, y, border_right_w, draw_h)
-            {
-                pixmap.fill_rect(rect, &paint, Transform::identity(), None);
-            }
+            safe_fill_rect(pixmap, clamped_x + draw_w - border_right_w, clamped_y, border_right_w, draw_h, &paint);
         }
 
         // Desenhar imagens <img>
@@ -377,7 +383,7 @@ fn render_node(
             if let Some(src) = node.attributes.get("src") {
                 draw_image(pixmap, node, src, image_cache, pm_width, pm_height, base_url);
             } else {
-                draw_image_placeholder(pixmap, x, y, draw_w, draw_h);
+                draw_image_placeholder(pixmap, clamped_x, clamped_y, draw_w, draw_h);
             }
         }
 
@@ -414,8 +420,8 @@ fn render_node(
                     render_text_ab(
                         &mut *pixmap,
                         &node.text,
-                        x + align_offset,
-                        y,
+                        clamped_x + align_offset,
+                        clamped_y,
                         font_size,
                         color,
                         font,
@@ -427,8 +433,8 @@ fn render_node(
                     fg_paint.set_color_rgba8(color.r, color.g, color.b, 255);
                     let text_h = font_size.min(draw_h * 0.6);
                     let text_w = (node.text.len() as f32 * font_size * 0.5).min(draw_w);
-                    let text_y = y + (draw_h - text_h) * 0.5;
-                    if let Some(rect) = Rect::from_xywh(x + 4.0, text_y, text_w, text_h) {
+                    let text_y = clamped_y + (draw_h - text_h) * 0.5;
+                    if let Some(rect) = Rect::from_xywh(clamped_x + 4.0, text_y, text_w, text_h) {
                         pixmap.fill_rect(rect, &fg_paint, Transform::identity(), None);
                     }
                 }
@@ -693,16 +699,9 @@ fn draw_image(
 
 /// Desenha um placeholder cinza para imagens que não carregaram.
 fn draw_image_placeholder(pixmap: &mut Pixmap, x: f32, y: f32, w: f32, h: f32) {
-    let draw_w = w.max(0.0);
-    let draw_h = h.max(0.0);
-    if draw_w <= 0.0 || draw_h <= 0.0 {
-        return;
-    }
     let mut paint = Paint::default();
     paint.set_color_rgba8(200, 200, 200, 255);
-    if let Some(rect) = Rect::from_xywh(x, y, draw_w, draw_h) {
-        pixmap.fill_rect(rect, &paint, Transform::identity(), None);
-    }
+    safe_fill_rect(pixmap, x, y, w, h, &paint);
 }
 
 #[allow(dead_code)]

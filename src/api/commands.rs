@@ -861,7 +861,15 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 height: args.height,
             };
 
-            crate::render::screenshot::render_to_image_with_base(&doc, &config, &args.output, Some(&url))?;
+            // block_in_place permite reqwest::blocking dentro do runtime tokio sem crash
+            tokio::task::block_in_place(|| {
+                crate::render::screenshot::render_to_image_with_base(
+                    &doc,
+                    &config,
+                    &args.output,
+                    Some(&url),
+                )
+            })?;
 
             if cli.json {
                 println!(

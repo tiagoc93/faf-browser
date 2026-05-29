@@ -88,6 +88,21 @@ fn build_node_recursive(
             .collect(),
     };
 
+    // Para elementos replaced (img, video, etc), atributos HTML width/height
+    // viram CSS inline (presentational hints do HTML5)
+    if tag == "img" || tag == "video" || tag == "canvas" || tag == "iframe" {
+        if visual.style.width.is_empty() || visual.style.width == "auto" {
+            if let Some(w) = visual.attributes.get("width") {
+                visual.style.width = format!("{}px", w);
+            }
+        }
+        if visual.style.height.is_empty() || visual.style.height == "auto" {
+            if let Some(h) = visual.attributes.get("height") {
+                visual.style.height = format!("{}px", h);
+            }
+        }
+    }
+
     // Processar filhos (elementos e text nodes)
     for child in element.children() {
         match child.value() {
@@ -165,6 +180,8 @@ fn tag_heuristic(tag: &str) -> NodeType {
         "span" | "a" | "strong" | "b" | "em" | "i" | "u" | "small" | "code" | "label" | "abbr"
         | "cite" | "q" | "img" | "br" | "input" | "textarea" | "select" | "button" | "sub"
         | "sup" | "mark" | "time" | "kbd" | "samp" | "var" => NodeType::Inline,
+        // Replaced elements (video, canvas, iframe) comportam-se como inline-block
+        "video" | "canvas" | "iframe" | "object" | "embed" => NodeType::InlineBlock,
         _ => NodeType::Block,
     }
 }

@@ -156,7 +156,17 @@ fn layout_block(
     }
 
     let font_size = css_to_pixels(&node.style.font_size, viewport_width, 16.0).max(8.0);
-    let bm = compute_box_model(&node.style, available_width, font_size);
+    let mut bm = compute_box_model(&node.style, available_width, font_size);
+
+    // Fallback: img sem dimensões CSS explícitas ganha dimensão intrínseca 100×100
+    if node.tag == "img" {
+        if bm.width <= 0.0 {
+            bm.width = 100.0;
+        }
+        if bm.height <= 0.0 {
+            bm.height = 100.0;
+        }
+    }
 
     let margin_left = bm.margin_left;
     let margin_right = bm.margin_right;
@@ -350,13 +360,20 @@ fn layout_block(
             let mut tw = text_width(&child.text, child_font_size, &child.style.font_family, font_cache, default_font);
             let mut th = child_lh;
 
-            if child_node_type == NodeType::InlineBlock {
+            if child_node_type == NodeType::InlineBlock || child.tag == "img" {
                 let child_bm = compute_box_model(&child.style, content_width, child_font_size);
                 if child_bm.width > 0.0 {
                     tw = child_bm.width;
                 }
                 if child_bm.height > 0.0 {
                     th = child_bm.height;
+                }
+                // Se a imagem não tem dimensões CSS explícitas nem atributos HTML, usar fallback
+                if child.tag == "img" && tw <= 0.0 {
+                    tw = 100.0; // fallback width
+                }
+                if child.tag == "img" && th <= 0.0 {
+                    th = 100.0; // fallback height
                 }
             }
 
