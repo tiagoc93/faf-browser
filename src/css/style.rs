@@ -53,6 +53,9 @@ pub struct ComputedStyle {
     pub flex_wrap: String,
     pub background_image: String,
     pub box_sizing: String,
+    /// Dimensões intrínsecas da imagem (baixadas via HTTP, não do CSS)
+    pub intrinsic_width: Option<f32>,
+    pub intrinsic_height: Option<f32>,
 }
 
 impl Default for ComputedStyle {
@@ -103,6 +106,8 @@ impl Default for ComputedStyle {
             flex_wrap: "nowrap".to_string(),
             background_image: "none".to_string(),
             box_sizing: "content-box".to_string(),
+            intrinsic_width: None,
+            intrinsic_height: None,
         }
     }
 }

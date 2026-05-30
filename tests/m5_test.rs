@@ -618,7 +618,7 @@ fn start_screenshot_server() -> u16 {
     port
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_screenshot_generated() {
     let port = start_screenshot_server();
     let output = format!("/tmp/faf_test_screenshot_{}.png", std::process::id());
@@ -661,7 +661,7 @@ fn start_screenshot_no_css_server() -> u16 {
     port
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_screenshot_no_css() {
     let port = start_screenshot_no_css_server();
     let output = format!("/tmp/faf_test_screenshot_no_css_{}.png", std::process::id());
@@ -709,7 +709,7 @@ fn start_screenshot_display_none_server() -> u16 {
     port
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_screenshot_display_none() {
     let port = start_screenshot_display_none_server();
     let output = format!("/tmp/faf_test_screenshot_hidden_{}.png", std::process::id());
@@ -790,7 +790,7 @@ async fn test_click_disappearing_element() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_screenshot_large_width() {
     let port = start_screenshot_server();
     let output = format!("/tmp/faf_test_screenshot_large_{}.png", std::process::id());

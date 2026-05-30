@@ -24,7 +24,7 @@ fn test_position_absolute_with_positioned_ancestor() {
                .normal { }";
     let sheet = parse_css(css).unwrap();
     let computed = compute_styles(&doc, &sheet);
-    let mut tree = build_layout_tree(&doc, &computed);
+    let mut tree = build_layout_tree(&doc, &computed, None);
     compute_layout(&mut tree, 800.0);
 
     // Encontrar parent div
@@ -57,7 +57,7 @@ fn test_position_absolute_not_in_normal_flow() {
                .abs { position: absolute; top: 0; left: 0; }";
     let sheet = parse_css(css).unwrap();
     let computed = compute_styles(&doc, &sheet);
-    let mut tree = build_layout_tree(&doc, &computed);
+    let mut tree = build_layout_tree(&doc, &computed, None);
     compute_layout(&mut tree, 800.0);
 
     let body = tree.children.iter().find(|c| c.tag == "body").unwrap();
@@ -83,7 +83,7 @@ fn test_position_fixed_uses_viewport() {
     let css = ".fixed { position: fixed; top: 5px; left: 5px; }";
     let sheet = parse_css(css).unwrap();
     let computed = compute_styles(&doc, &sheet);
-    let mut tree = build_layout_tree(&doc, &computed);
+    let mut tree = build_layout_tree(&doc, &computed, None);
     compute_layout(&mut tree, 800.0);
 
     // Fixed deve usar viewport (0,0) como referência
@@ -157,7 +157,7 @@ fn test_line_height_explicit() {
     assert_eq!(style.line_height, "2", "line-height deve ser 2");
 
     // Renderizar e verificar que funciona
-    let mut tree = build_layout_tree(&doc, &computed);
+    let mut tree = build_layout_tree(&doc, &computed, None);
     compute_layout(&mut tree, 800.0);
 }
 
@@ -179,7 +179,7 @@ fn test_overflow_hidden_clips_screenshot() {
     assert!(has_overflow, "overflow: hidden deve estar computado");
 
     // Verificar que renderiza sem crash
-    let mut tree = build_layout_tree(&doc, &computed);
+    let mut tree = build_layout_tree(&doc, &computed, None);
     compute_layout(&mut tree, 800.0);
 
     let config = ScreenshotConfig {
@@ -196,7 +196,7 @@ fn test_overflow_visible_default() {
     let html = r#"<html><body><div>Normal</div></body></html>"#;
     let doc = HtmlDocument::parse(html);
     let computed = vec![];
-    let tree = build_layout_tree(&doc, &computed);
+    let tree = build_layout_tree(&doc, &computed, None);
 
     // Default overflow deve ser "visible"
     let body = tree.children.iter().find(|c| c.tag == "body").unwrap();

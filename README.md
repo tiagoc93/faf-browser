@@ -7,8 +7,8 @@
   <img alt="Rust" src="https://img.shields.io/badge/Rust-Edition_2024-orange?style=for-the-badge&logo=rust">
 </picture>
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/test-309_passed-green?style=for-the-badge">
-  <img alt="Tests" src="https://img.shields.io/badge/test-309_passed-green?style=for-the-badge">
+  <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/test-214_passed-green?style=for-the-badge">
+  <img alt="Tests" src="https://img.shields.io/badge/test-214_passed-green?style=for-the-badge">
 </picture>
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge">
@@ -76,7 +76,7 @@ Renderizado pelo CSS Engine próprio. Runtime **QuickJS** embarcado para execuç
 | ⏱️ **setTimeout / setInterval** — timers integrados com event loop tokio | ✅ **NOVO** |
 | 📜 **Script tags** — execução automática de `<script>` inline e externo | ✅ **NOVO** |
 | 📦 **Binário único** — ~1MB, zero dependências runtime | ✅ |
-| 🧪 **309 testes** — unitários + integração em sites reais | ✅ |
+| 🧪 **214 testes** — unitários + integração em sites reais | ✅ |
 
 ---
 
@@ -614,30 +614,54 @@ Correções para atingir paridade visual com Playwright/Chromium na página book
 
 ---
 
-### 🩺 M8.6 — Diagnóstico: Imagens na Books To Scrape (Em andamento)
+### ✅ M8.6 — Dimensões Intrínsecas (Concluído)
 
-#### Descobertas
+Confirmado via comparação com screenshot Playwright: os primeiros livros de books.toscrape.com NÃO têm imagem no HTML (DOM sem `src` ou `src=""`). O sistema de dimensões intrínsecas está funcional — usa 100×100 fallback quando não há dados.
 
-| Descoberta | Detalhe |
-|------------|---------|
-| ✅ **`>` combinator** | Já funciona! `scraper::Selector` suporta nativamente |
-| ⚠️ **Pseudo-classes** | 261 de 267 regras com `>` falham por conterem `:hover`, `:before`, `:after` |
-| ✅ **`.thumbnail { display: block }`** | Já aplica corretamente nas imagens |
-| ❌ **Dimensão zero** | Imagens ganham `display: block` mas sem width/height → 0×0 |
+|| Task | Feature | Status |
+|------|---------|:------:|
+| **T075** | Filtrar pseudo-classes (`:hover`, `:before`, `:after`) | ✅ |
+| **T076** | Baixar dimensões via HTTP, cache LRU 200 entries | ✅ |
+| **T074** | Colapso de altura: intrinsic_width/intrinsic_height | ✅ |
 
-#### Causa raiz
+```bash
+📦 3 tasks · ✅ 3 concluídas · 214 testes · 0 falhas
+🖼️ 40 imagens processadas (dimensões), altura ~2044px
+```
 
-O `scraper::Selector::parse()` rejeita o seletor INTEIRO se qualquer parte contiver pseudo-classes não suportadas. Ex: `.thumbnail > img, .thumbnail a > img:hover` → a 2ª parte quebra tudo.
+---
 
-#### Tasks pendentes
+### 🚧 M8.7 — Renderização de Imagens Reais (Em andamento)
 
-| Task | Descrição |
-|------|-----------|
-| **T074** | Corrigir colapso de altura com fallback 100×100 |
-| **T075** | Filtrar `:hover`, `:focus`, `:before`, `:after` nos seletores |
-| **T076** | Dimensões intrínsecas reais (baixar imagem → usar w×h nativo) |
+**Bug identificado:** Imagens são baixadas e cacheadas (20 entries em `/tmp/image_cache/`), mas NÃO aparecem no screenshot. Caixas brancas vazias onde deveriam estar capas de livros.
 
-Veja `TASKS.md` para o diagnóstico completo e plano detalhado.
+**Diagnóstico:**
+- `RENDER_CALL` log confirma: img nodes encontrados no visual tree com coordenadas corretas (ex: `tag="img" rect=Rect { left: 30.0, top: 1243.9998, right: 155.0, bottom: 1398.9998 } children=0`)
+- `RENDER_DRAW` log NUNCA aparece para tags "img" — o bloco `if draw_w > 0.0 && draw_h > 0.0` não está sendo executado para nós img
+- `draw_image` NUNCA é chamado (sem logs DRAW_IMAGE)
+- Pixel analysis do screenshot: apenas pixels #EEEEEE (fundo cinza) na área de produtos, ZERO pixels coloridos
+
+**Hipótese:** O visual tree para imagens está sendo construído corretamente, mas há algo no código de renderização que impede o drawing block de ser executado para img nodes.
+
+**Task para o coder:** `TASKS_M8_7_DEBUG.md`
+
+|| Task | Feature | Status |
+|------|---------|:------:|
+| **T077** | `image_cache.rs` — cache de imagens baixadas (bytes→Pixmap) | 🔄 |
+| **T078** | Modificar screenshot.rs — baixar imagens ANTES do layout | 🔄 |
+| **T079** | Renderizar `<img>` — extrair Pixmap do cache e desenhar | 🔄 |
+| **T080** | Scale/preserve aspect ratio nas imagens | 🔄 |
+| **T081** | Testes de integração e validação visual | 🔄 |
+
+**Specs:** `TASKS_M8_7.md`
+
+**Estado atual:**
+- `image_dimensions.rs` existe e busca DIMENSÕES (não pixels)
+- `image` crate (0.25) já é dependência do projeto
+- tiny_skia já é usado para renderização
+- Precisa: cache de pixels + render em `<img>`
+
+**Critério de sucesso:** Screenshot books.toscrape.com mostra capas coloridas (não placeholder cinza), altura > 4000px, estrelas ★★★★★ visíveis.
 
 ## 🧪 Testes
 

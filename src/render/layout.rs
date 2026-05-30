@@ -150,6 +150,8 @@ fn layout_block(
     font_cache: &HashMap<String, FontArc>,
     default_font: &Option<FontArc>,
 ) -> f32 {
+    log::info!("COMPUTE_LAYOUT: tag={:?} rect={:?} children={}", node.tag, node.rect, node.children.len());
+
     // Se for flex container, usar layout flex
     if node.style.display == "flex" {
         return layout_flex(node, x, y, available_width, viewport_width, font_cache, default_font);
@@ -158,13 +160,14 @@ fn layout_block(
     let font_size = css_to_pixels(&node.style.font_size, viewport_width, 16.0).max(8.0);
     let mut bm = compute_box_model(&node.style, available_width, font_size);
 
-    // Fallback: img sem dimensões CSS explícitas ganha dimensão intrínseca 100×100
+    // Fallback: img sem dimensões CSS explícitas ganha dimensões intrínsecas (baixadas via HTTP)
+    // ou fallback 100×100 se não conseguiu baixar
     if node.tag == "img" {
         if bm.width <= 0.0 {
-            bm.width = 100.0;
+            bm.width = node.style.intrinsic_width.unwrap_or(100.0);
         }
         if bm.height <= 0.0 {
-            bm.height = 100.0;
+            bm.height = node.style.intrinsic_height.unwrap_or(100.0);
         }
     }
 
@@ -247,8 +250,29 @@ fn layout_block(
         )
         .unwrap_or(Rect::from_xywh(0.0, 0.0, 0.0, 0.0).unwrap());
 
+        // Layout recursivo dos filhos do float para obter altura real
+        let float_bottom = layout_block(
+            &mut node.children[fi],
+            float_cursor_x,
+            float_cursor_y,
+            child_w,
+            viewport_width,
+            font_cache,
+            default_font,
+        );
+        let real_h = float_bottom - float_cursor_y;
+        if real_h > child_h {
+            node.children[fi].rect = Rect::from_xywh(
+                float_cursor_x,
+                float_cursor_y,
+                child_w,
+                real_h,
+            )
+            .unwrap_or(node.children[fi].rect);
+        }
+
         float_cursor_x += child_w;
-        max_float_bottom = max_float_bottom.max(float_cursor_y + child_h);
+        max_float_bottom = max_float_bottom.max(float_cursor_y + node.children[fi].rect.height());
     }
 
     // Floats à direita: empilha da direita para esquerda
@@ -295,7 +319,28 @@ fn layout_block(
         )
         .unwrap_or(Rect::from_xywh(0.0, 0.0, 0.0, 0.0).unwrap());
 
-        max_float_bottom = max_float_bottom.max(right_float_y + child_h);
+        // Layout recursivo dos filhos do float para obter altura real
+        let float_bottom = layout_block(
+            &mut node.children[fi],
+            right_cursor_x,
+            right_float_y,
+            child_w,
+            viewport_width,
+            font_cache,
+            default_font,
+        );
+        let real_h = float_bottom - right_float_y;
+        if real_h > child_h {
+            node.children[fi].rect = Rect::from_xywh(
+                right_cursor_x,
+                right_float_y,
+                child_w,
+                real_h,
+            )
+            .unwrap_or(node.children[fi].rect);
+        }
+
+        max_float_bottom = max_float_bottom.max(right_float_y + node.children[fi].rect.height());
     }
 
     // Layout do fluxo normal (começa abaixo dos floats se houver)
@@ -368,24 +413,32 @@ fn layout_block(
                 if child_bm.height > 0.0 {
                     th = child_bm.height;
                 }
-                // Se a imagem não tem dimensões CSS explícitas nem atributos HTML, usar fallback
-                if child.tag == "img" && tw <= 0.0 {
-                    tw = 100.0; // fallback width
-                }
-                if child.tag == "img" && th <= 0.0 {
-                    th = 100.0; // fallback height
+                // Se a imagem não tem dimensões CSS explícitas, usar fallback ou intrínseca
+                if child.tag == "img" {
+                    log::info!("LAYOUT_IMG: src={:?} bm_width={} bm_height={} intrinsic_width={:?} intrinsic_height={:?}",
+                        child.attributes.get("src"), child_bm.width, child_bm.height, child.style.intrinsic_width, child.style.intrinsic_height);
+                    if child_bm.width <= 0.0 {
+                        tw = child.style.intrinsic_width.unwrap_or(100.0);
+                    }
+                    if child_bm.height <= 0.0 {
+                        th = child.style.intrinsic_height.unwrap_or(100.0);
+                    }
+                    log::info!("LAYOUT_IMG_AFTER: tw={} th={}", tw, th);
                 }
             }
-
-            // Quebra de linha se exceder largura
-            if processed_any_inline && line_x + tw > content_x + content_width && tw > 0.0 {
-                line_x = content_x;
-                line_y += line_height;
-                line_height = 0.0;
+            // CRÍTICO: img nodes SEMPRE precisam de dimensões, mesmo que tw/th sejam 0
+            if child.tag == "img" && tw <= 0.0 {
+                tw = child.style.intrinsic_width.unwrap_or(100.0);
             }
-
+            if child.tag == "img" && th <= 0.0 {
+                th = child.style.intrinsic_height.unwrap_or(100.0);
+            }
             child.rect = Rect::from_xywh(line_x, line_y, tw, th)
                 .unwrap_or(Rect::from_xywh(0.0, 0.0, 0.0, 0.0).unwrap());
+
+            if child.tag == "img" {
+                log::info!("LAYOUT_IMG_RECT: src={:?} rect={:?}", child.attributes.get("src"), child.rect);
+            }
 
             if !child.children.is_empty() {
                 if child_node_type == NodeType::InlineBlock {
@@ -785,7 +838,7 @@ mod tests {
         let html = r#"<html><body><div>A</div><div>B</div></body></html>"#;
         let doc = HtmlDocument::parse(html);
         let computed = vec![];
-        let mut tree = build_layout_tree(&doc, &computed);
+        let mut tree = build_layout_tree(&doc, &computed, None);
         compute_layout(&mut tree, 800.0);
 
         let body = tree.children.iter().find(|c| c.tag == "body").unwrap();
@@ -799,7 +852,7 @@ mod tests {
         let html = r#"<html><body><p><span>Hello</span> <span>World</span></p></body></html>"#;
         let doc = HtmlDocument::parse(html);
         let computed = vec![];
-        let mut tree = build_layout_tree(&doc, &computed);
+        let mut tree = build_layout_tree(&doc, &computed, None);
         compute_layout(&mut tree, 800.0);
 
         let body = tree.children.iter().find(|c| c.tag == "body").unwrap();
@@ -816,7 +869,7 @@ mod tests {
         let css = "p { font-size: 20px; }";
         let sheet = parse_css(css).unwrap();
         let computed = compute_styles(&doc, &sheet);
-        let mut tree = build_layout_tree(&doc, &computed);
+        let mut tree = build_layout_tree(&doc, &computed, None);
         compute_layout(&mut tree, 50.0);
 
         let body = tree.children.iter().find(|c| c.tag == "body").unwrap();
@@ -839,7 +892,7 @@ mod tests {
         let css = ".a { margin-bottom: 10px; } .b { margin-top: 30px; }";
         let sheet = parse_css(css).unwrap();
         let computed = compute_styles(&doc, &sheet);
-        let mut tree = build_layout_tree(&doc, &computed);
+        let mut tree = build_layout_tree(&doc, &computed, None);
         compute_layout(&mut tree, 800.0);
 
         let body = tree.children.iter().find(|c| c.tag == "body").unwrap();

@@ -175,10 +175,35 @@ pub fn render_to_image_with_base(
     log::info!("Estilos computados: {} elementos", computed.len());
     log::info!("CSS parse + compute: {:?}", t1.elapsed());
 
-    // 2. Construir árvore visual e calcular layout
+    // 2. Baixar dimensões de imagens ANTES da árvore visual
     let t2 = Instant::now();
-    let mut tree = build_layout_tree(doc, &computed);
+    let image_dims = crate::render::image_dimensions::fetch_all_image_dimensions(doc, base_url);
+    log::info!("Dimensões de imagens buscadas: {} imagens", image_dims.len());
+
+    // NOVO (T078): Baixar TODAS as imagens (pixels) para o cache global antes do layout
+    if let Some(base) = base_url {
+        let scraper_html = doc.scraper_html();
+        if let Ok(img_selector) = scraper::Selector::parse("img[src]") {
+            let img_urls: Vec<String> = scraper_html
+                .select(&img_selector)
+                .filter_map(|el| el.value().attr("src").map(|s| s.to_string()))
+                .collect();
+            log::info!("Baixando {} imagens...", img_urls.len());
+            let mut cache = crate::render::image_cache::image_cache();
+            for src in &img_urls {
+                let resolved = crate::render::image_cache::resolve_url(src, base);
+                let _ = cache.get_or_fetch(&resolved, base);
+            }
+            log::info!("Cache de imagens preenchido: {} entradas", cache.len());
+        }
+    }
+
+    // 3. Construir árvore visual e calcular layout
+    let t3 = Instant::now();
+    let mut tree = build_layout_tree(doc, &computed, Some(&image_dims));
+    log::info!("TREE_BEFORE_LAYOUT: img_count={}", count_img_nodes(&tree));
     compute_layout(&mut tree, config.width as f32);
+    log::info!("TREE_AFTER_LAYOUT: img_count={}", count_img_nodes(&tree));
     log::info!("Layout tree + compute_layout: {:?}", t2.elapsed());
 
     // 3. Determinar dimensões do canvas
@@ -218,7 +243,6 @@ pub fn render_to_image_with_base(
     let mut text_count = 0;
     let mut font_ok_count = 0;
     let total_nodes = count_nodes(&tree);
-    let mut image_cache: HashMap<String, image::DynamicImage> = HashMap::new();
 
     render_node(
         &mut pixmap,
@@ -229,7 +253,6 @@ pub fn render_to_image_with_base(
         height,
         &mut text_count,
         &mut font_ok_count,
-        &mut image_cache,
         None, // sem clip inicial
         base_url,
     );
@@ -250,6 +273,12 @@ pub fn render_to_image_with_base(
         .map_err(|e| anyhow::anyhow!("Falha ao salvar PNG: {:?}", e))?;
 
     Ok(())
+}
+
+/// Conta nós img na árvore visual.
+fn count_img_nodes(node: &VisualNode) -> usize {
+    let self_count = if node.tag == "img" { 1 } else { 0 };
+    self_count + node.children.iter().map(count_img_nodes).sum::<usize>()
 }
 
 /// Preenche um retângulo com segurança, clampando ao pixmap.
@@ -281,14 +310,17 @@ fn render_node(
     pm_height: u32,
     text_count: &mut usize,
     font_ok_count: &mut usize,
-    image_cache: &mut HashMap<String, image::DynamicImage>,
     clip_rect: Option<Rect>,
     base_url: Option<&str>,
 ) {
+    // Log every call to track render traversal
+    log::info!("RENDER_CALL: tag={:?} rect={:?} children={}", node.tag, node.rect, node.children.len());
     let x = node.rect.x();
     let y = node.rect.y();
     let w = node.rect.width();
     let h = node.rect.height();
+    log::info!("NODE_DEBUG: tag={:?} rect=Rect{{ x={:.1}, y={:.1}, w={:.1}, h={:.1} }}", 
+               node.tag, x, y, w, h);
 
     // T056: Pular nós completamente fora da viewport (early skip)
     if y + h < 0.0 || y > pm_height as f32 || x + w < 0.0 || x > pm_width as f32 {
@@ -309,17 +341,20 @@ fn render_node(
         let cx2 = (clip.x() + clip.width()).min(x + w);
         let cy2 = (clip.y() + clip.height()).min(y + h);
         if cx2 <= cx1 || cy2 <= cy1 {
-            // Nó completamente fora do clip — pular
-            // Mas ainda renderizar filhos (eles podem estar dentro do clip)
-            // Na verdade se overflow:hidden não devemos renderizar fora
-            return;
+            // Nó fora do clip — não desenha este nó, mas filhos ainda usam o clip do pai
+            log::warn!("CLIP_SKIP: tag={:?} x={:.1} w={:.1} y={:.1} h={:.1} cx1={:.1} cx2={:.1} cy1={:.1} cy2={:.1}", 
+                       node.tag, x, w, y, h, cx1, cx2, cy1, cy2);
+            clip_rect
+        } else {
+            Rect::from_xywh(cx1, cy1, cx2 - cx1, cy2 - cy1)
         }
-        Rect::from_xywh(cx1, cy1, cx2 - cx1, cy2 - cy1)
     } else {
         None
     };
 
     if draw_w > 0.0 && draw_h > 0.0 {
+        log::info!("RENDER_DRAW: tag={:?} w={:.1} h={:.1}", node.tag, draw_w, draw_h);
+
         // Desenhar background-color
         if !node.style.background_color.is_empty()
             && node.style.background_color != "transparent"
@@ -380,11 +415,16 @@ fn render_node(
 
         // Desenhar imagens <img>
         if node.tag == "img" {
+            log::info!("RENDER_IMG: found img node, rect={:?}, attrs={:?}", node.rect, node.attributes);
             if let Some(src) = node.attributes.get("src") {
-                draw_image(pixmap, node, src, image_cache, pm_width, pm_height, base_url);
+                log::info!("RENDER_IMG: calling draw_image for src={}", src);
+                draw_image(pixmap, node, src, pm_width, pm_height, base_url);
             } else {
+                log::warn!("RENDER_IMG: img node has no src attribute!");
                 draw_image_placeholder(pixmap, clamped_x, clamped_y, draw_w, draw_h);
             }
+        } else if node.tag == "div" {
+            log::debug!("RENDER_DIV: tag=div rect={:?}", node.rect);
         }
 
         // Desenhar texto usando ab_glyph com text-align
@@ -485,7 +525,6 @@ fn render_node(
             pm_height,
             text_count,
             font_ok_count,
-            image_cache,
             child_clip,
             base_url,
         );
@@ -611,83 +650,79 @@ fn render_text_ab(
     }
 }
 
-/// Desenha uma imagem <img> no pixmap, carregando via HTTP se necessário.
+/// Desenha uma imagem <img> no pixmap a partir do cache global.
 fn draw_image(
     pixmap: &mut Pixmap,
     node: &VisualNode,
     src: &str,
-    image_cache: &mut HashMap<String, image::DynamicImage>,
     _pm_width: u32,
     _pm_height: u32,
     base_url: Option<&str>,
 ) {
     let x = node.rect.x();
     let y = node.rect.y();
-    
-    // Resolver URLs relativas
-    let resolved_src = resolve_url(src, base_url);
-    let src = resolved_src.as_str();
     let w = node.rect.width();
     let h = node.rect.height();
 
-    let img = if let Some(cached) = image_cache.get(src) {
-        Some(cached.clone())
+    log::info!("DRAW_IMAGE called: src={}, x={}, y={}, w={}, h={}", src, x, y, w, h);
+
+    let resolved_src = if let Some(base) = base_url {
+        crate::render::image_cache::resolve_url(src, base)
     } else {
-        match reqwest::blocking::get(src) {
-            Ok(response) => {
-                if response.status().is_success() {
-                    match response.bytes() {
-                        Ok(bytes) => match image::load_from_memory(&bytes) {
-                            Ok(dynamic_img) => {
-                                image_cache.insert(src.to_string(), dynamic_img.clone());
-                                Some(dynamic_img)
-                            }
-                            Err(e) => {
-                                log::warn!("Falha ao decodificar imagem {}: {}", src, e);
-                                None
-                            }
-                        },
-                        Err(e) => {
-                            log::warn!("Falha ao ler bytes da imagem {}: {}", src, e);
-                            None
-                        }
-                    }
-                } else {
-                    log::warn!("HTTP {} ao carregar imagem {}", response.status(), src);
-                    None
-                }
-            }
-            Err(e) => {
-                log::warn!("Falha ao requisitar imagem {}: {}", src, e);
-                None
-            }
-        }
+        src.to_string()
     };
 
-    if let Some(img) = img {
-        let resized = img.resize(w as u32, h as u32, image::imageops::FilterType::Lanczos3);
-        let rgba = resized.to_rgba8();
-        let img_width = rgba.width();
-        let img_height = rgba.height();
+    let mut cache = crate::render::image_cache::image_cache();
+    let decoded = cache
+        .get(&resolved_src)
+        .or_else(|| cache.get(src));
+
+    log::info!("  -> resolved_src={}, cache_hits={}, decoded={}", 
+        resolved_src,
+        cache.len(),
+        if decoded.is_some() { "Some" } else { "None" });
+
+    if let Some(decoded) = decoded {
+        let img_w = decoded.width;
+        let img_h = decoded.height;
+        let data = &decoded.data;
+
+        // T080: scale proporcional preservando aspect ratio (object-fit: contain)
+        let scale_x = if img_w > 0 { w / img_w as f32 } else { 1.0 };
+        let scale_y = if img_h > 0 { h / img_h as f32 } else { 1.0 };
+        let scale = scale_x.min(scale_y);
+        let draw_w = (img_w as f32 * scale).min(w);
+        let draw_h = (img_h as f32 * scale).min(h);
+        let offset_x = (w - draw_w) * 0.5;
+        let offset_y = (h - draw_h) * 0.5;
+        let start_x = x + offset_x;
+        let start_y = y + offset_y;
+
         let pm_w = pixmap.width();
         let pm_h = pixmap.height();
         let pixels = pixmap.pixels_mut();
 
-        for iy in 0..img_height {
-            for ix in 0..img_width {
-                let px = (x as u32 + ix).min(pm_w - 1);
-                let py = (y as u32 + iy).min(pm_h - 1);
+        for iy in 0..draw_h as u32 {
+            for ix in 0..draw_w as u32 {
+                let src_x = ((ix as f32 / scale) as u32).min(img_w.saturating_sub(1));
+                let src_y = ((iy as f32 / scale) as u32).min(img_h.saturating_sub(1));
+                let src_idx = ((src_y * img_w + src_x) * 4) as usize;
+                let px = (start_x as u32 + ix).min(pm_w.saturating_sub(1));
+                let py = (start_y as u32 + iy).min(pm_h.saturating_sub(1));
                 if px >= pm_w || py >= pm_h {
                     continue;
                 }
-                let pixel = rgba.get_pixel(ix, iy);
+                let pixel_r = data[src_idx];
+                let pixel_g = data[src_idx + 1];
+                let pixel_b = data[src_idx + 2];
+                let pixel_a = data[src_idx + 3];
                 let idx = (py * pm_w + px) as usize;
                 let bg = pixels[idx].demultiply();
-                let alpha = pixel[3] as f32 / 255.0;
+                let alpha = pixel_a as f32 / 255.0;
                 let inv_alpha = 1.0 - alpha;
-                let r = (pixel[0] as f32 * alpha + bg.red() as f32 * inv_alpha) as u8;
-                let g = (pixel[1] as f32 * alpha + bg.green() as f32 * inv_alpha) as u8;
-                let b = (pixel[2] as f32 * alpha + bg.blue() as f32 * inv_alpha) as u8;
+                let r = (pixel_r as f32 * alpha + bg.red() as f32 * inv_alpha) as u8;
+                let g = (pixel_g as f32 * alpha + bg.green() as f32 * inv_alpha) as u8;
+                let b = (pixel_b as f32 * alpha + bg.blue() as f32 * inv_alpha) as u8;
                 let a = (255.0 * alpha + bg.alpha() as f32 * inv_alpha) as u8;
                 pixels[idx] = ColorU8::from_rgba(r, g, b, a).premultiply();
             }

@@ -544,6 +544,7 @@ dependencies = [
  "hex",
  "image",
  "log",
+ "once_cell",
  "rand",
  "regex",
  "reqwest",

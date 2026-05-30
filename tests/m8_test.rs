@@ -427,3 +427,38 @@ fn test_float_grid_four_columns() {
         assert!(cols[i].rect.x() > cols[i-1].rect.x(), "col {} x={} should be right of col {} x={}", i, cols[i].rect.x(), i-1, cols[i-1].rect.x());
     }
 }
+
+#[test]
+fn test_img_nodes_have_rects_no_network() {
+    let html = r#"<html><body>
+        <div><img src="test.jpg" width="100" height="200" alt="Test"></div>
+    </body></html>"#;
+    let doc = HtmlDocument::parse(html);
+    let sheet = parse_css("").unwrap();
+    let computed = compute_styles(&doc, &sheet);
+    let mut tree = build_layout_tree(&doc, &computed, None);
+    compute_layout(&mut tree, 800.0);
+    
+    fn find_imgs(node: &faf_browser::render::tree::VisualNode, imgs: &mut Vec<(String, f32, f32, f32, f32)>) {
+        if node.tag == "img" {
+            imgs.push((
+                node.attributes.get("src").cloned().unwrap_or_default(),
+                node.rect.x(), node.rect.y(), node.rect.width(), node.rect.height()
+            ));
+        }
+        for c in &node.children {
+            find_imgs(c, imgs);
+        }
+    }
+    let mut imgs = Vec::new();
+    find_imgs(&tree, &mut imgs);
+    
+    println!("Found {} img nodes", imgs.len());
+    for (src, x, y, w, h) in &imgs {
+        println!("  img src={:?} rect=({},{},{},{})", src, x, y, w, h);
+    }
+    assert!(!imgs.is_empty(), "Should find img nodes");
+    for (_, x, y, w, h) in &imgs {
+        assert!(*w > 0.0 && *h > 0.0, "img should have non-zero dimensions, got w={} h={}", w, h);
+    }
+}

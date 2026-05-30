@@ -30,6 +30,7 @@ pub struct VisualNode {
 pub fn build_layout_tree(
     doc: &HtmlDocument,
     computed: &[(ElementMatch, ComputedStyle)],
+    image_dims: Option<&std::collections::HashMap<String, (u32, u32)>>,
 ) -> VisualNode {
     let scraper_html = doc.scraper_html();
     let root = scraper_html.root_element();
@@ -37,7 +38,7 @@ pub fn build_layout_tree(
     let default_style = ComputedStyle::default();
 
     // Tenta construir a partir do <html>; se não houver, cria um root vazio.
-    build_node_recursive(root, computed, &default_style).unwrap_or_else(|| VisualNode {
+    build_node_recursive(root, computed, &default_style, image_dims).unwrap_or_else(|| VisualNode {
         node_type: NodeType::Block,
         tag: "body".to_string(),
         text: String::new(),
@@ -54,11 +55,20 @@ fn build_node_recursive(
     element: scraper::ElementRef,
     computed: &[(ElementMatch, ComputedStyle)],
     parent_style: &ComputedStyle,
+    image_dims: Option<&std::collections::HashMap<String, (u32, u32)>>,
 ) -> Option<VisualNode> {
     let tag = element.value().name().to_lowercase();
 
+    // Log para img
+    if tag == "img" {
+        log::info!("TREE_BUILD: found img element, attrs={:?}", element.value().attrs().collect::<Vec<_>>());
+    }
+
     // Ignorar tags estruturais/não-visíveis
     if is_skip_tag(&tag) {
+        if tag == "img" {
+            log::warn!("TREE_BUILD: img SKIPPED by is_skip_tag!");
+        }
         return None;
     }
 
@@ -67,6 +77,9 @@ fn build_node_recursive(
 
     // Ignorar display: none
     if style.display == "none" {
+        if tag == "img" {
+            log::warn!("TREE_BUILD: img SKIPPED by display:none");
+        }
         return None;
     }
 
@@ -88,6 +101,10 @@ fn build_node_recursive(
             .collect(),
     };
 
+    if tag == "img" {
+        log::info!("BUILD_IMG: creating img node with rect={:?} attrs={:?}", visual.rect, visual.attributes);
+    }
+
     // Para elementos replaced (img, video, etc), atributos HTML width/height
     // viram CSS inline (presentational hints do HTML5)
     if tag == "img" || tag == "video" || tag == "canvas" || tag == "iframe" {
@@ -101,6 +118,25 @@ fn build_node_recursive(
                 visual.style.height = format!("{}px", h);
             }
         }
+        // Injetar dimensões intrínsecas da imagem (baixadas via HTTP)
+        if tag == "img" {
+            if let Some(dims_map) = image_dims {
+                // Tentar both src absoluto e relativo
+                let src = visual.attributes.get("src").cloned();
+                if let Some(img_src) = src {
+                    // Resolve relative URLs
+                    let resolved = crate::render::image_dimensions::resolve_url(&img_src, None);
+                    if let Some(dim) = dims_map.get(&img_src).or_else(|| dims_map.get(&resolved)) {
+                        if visual.style.width.is_empty() || visual.style.width == "auto" {
+                            visual.style.intrinsic_width = Some(dim.0 as f32);
+                        }
+                        if visual.style.height.is_empty() || visual.style.height == "auto" {
+                            visual.style.intrinsic_height = Some(dim.1 as f32);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Processar filhos (elementos e text nodes)
@@ -108,7 +144,7 @@ fn build_node_recursive(
         match child.value() {
             scraper::Node::Element(_) => {
                 if let Some(child_el) = scraper::ElementRef::wrap(child)
-                    && let Some(child_node) = build_node_recursive(child_el, computed, &style) {
+                    && let Some(child_node) = build_node_recursive(child_el, computed, &style, image_dims) {
                         visual.children.push(child_node);
                     }
             }
@@ -240,7 +276,7 @@ mod tests {
         let sheet = parse_css(css).unwrap();
         let computed = compute_styles(&doc, &sheet);
 
-        let tree = build_layout_tree(&doc, &computed);
+        let tree = build_layout_tree(&doc, &computed, None);
 
         // Deve ter pelo menos 3 níveis de profundidade:
         // body -> div -> h1/p -> text/span -> text
@@ -270,7 +306,7 @@ mod tests {
         "#;
         let doc = HtmlDocument::parse(html);
         let computed = compute_styles(&doc, &crate::css::parser::Stylesheet { rules: vec![] });
-        let tree = build_layout_tree(&doc, &computed);
+        let tree = build_layout_tree(&doc, &computed, None);
 
         // Não deve conter script, style, head, title, meta, link
         fn assert_no_skip_tags(node: &VisualNode) {
@@ -294,7 +330,7 @@ mod tests {
         let css = ".hidden { display: none; }";
         let sheet = parse_css(css).unwrap();
         let computed = compute_styles(&doc, &sheet);
-        let tree = build_layout_tree(&doc, &computed);
+        let tree = build_layout_tree(&doc, &computed, None);
 
         fn has_tag(node: &VisualNode, tag: &str) -> bool {
             if node.tag == tag {
@@ -323,7 +359,7 @@ mod tests {
         "#;
         let doc = HtmlDocument::parse(html);
         let computed = vec![];
-        let tree = build_layout_tree(&doc, &computed);
+        let tree = build_layout_tree(&doc, &computed, None);
 
         let body = tree.children.iter().find(|c| c.tag == "body").unwrap();
         let div = body.children.iter().find(|c| c.tag == "div").unwrap();

@@ -40,7 +40,7 @@ fn test_layout_tree_has_attributes() {
     let html = r#"<html><body><img src="test.jpg" alt="Test"></body></html>"#;
     let doc = HtmlDocument::parse(html);
     let computed = vec![];
-    let tree = build_layout_tree(&doc, &computed);
+    let tree = build_layout_tree(&doc, &computed, None);
 
     let body = tree.children.iter().find(|c| c.tag == "body").unwrap();
     let img = body.children.iter().find(|c| c.tag == "img").unwrap();
@@ -111,7 +111,7 @@ fn test_relative_positioning_offset() {
     let css = doc.extract_css().unwrap_or_default();
     let sheet = parse_css(&css).unwrap();
     let computed = compute_styles(&doc, &sheet);
-    let mut tree = build_layout_tree(&doc, &computed);
+    let mut tree = build_layout_tree(&doc, &computed, None);
     compute_layout(&mut tree, 400.0);
 
     let body = tree.children.iter().find(|c| c.tag == "body").unwrap();
@@ -212,7 +212,7 @@ fn test_text_wrap_narrow_viewport() {
     let css = doc.extract_css().unwrap_or_default();
     let sheet = parse_css(&css).unwrap();
     let computed = compute_styles(&doc, &sheet);
-    let mut tree = build_layout_tree(&doc, &computed);
+    let mut tree = build_layout_tree(&doc, &computed, None);
     compute_layout(&mut tree, 100.0);
 
     let body = tree.children.iter().find(|c| c.tag == "body").unwrap();
@@ -249,7 +249,7 @@ fn test_deep_nesting_regression() {
 
     let doc = HtmlDocument::parse(&html);
     let computed = vec![];
-    let tree = build_layout_tree(&doc, &computed);
+    let tree = build_layout_tree(&doc, &computed, None);
 
     fn max_depth(node: &faf_browser::render::tree::VisualNode) -> usize {
         1 + node.children.iter().map(max_depth).max().unwrap_or(0)
