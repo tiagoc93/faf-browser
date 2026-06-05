@@ -1,265 +1,117 @@
-use std::fs;
-use std::path::Path;
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::thread;
 
-use faf_browser::dom::HtmlDocument;
-use faf_browser::render::screenshot::{render_to_image, ScreenshotConfig};
-use faf_browser::render::tree::build_layout_tree;
-use faf_browser::render::layout::compute_layout;
-use faf_browser::css::parser::parse_css;
-use faf_browser::css::style::compute_styles;
+use clap::Parser;
+use faf_browser::api::commands::{run, Cli};
 
-// ---------------------------------------------------------------------------
-// T049 — Bordas CSS
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_screenshot_border_rendered() {
-    let html = r#"
-        <html><body>
-            <div style="border: 2px solid red; width: 100px; height: 100px;"></div>
-        </body></html>
-    "#;
-    let doc = HtmlDocument::parse(html);
-    let output = "/tmp/faf_test_border.png";
-    let config = ScreenshotConfig {
-        width: 400,
-        height: 200,
-    };
-
-    render_to_image(&doc, &config, output).expect("render should succeed");
-    assert!(Path::new(output).exists(), "screenshot should exist");
-    let meta = fs::metadata(output).expect("should read metadata");
-    assert!(meta.len() > 0, "screenshot should not be empty");
-
-    // Cleanup
-    let _ = fs::remove_file(output);
+fn start_server_with_html(html: &'static str) -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buf = [0u8; 4096];
+        let _ = stream.read(&mut buf);
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            html.len(),
+            html
+        );
+        let _ = stream.write_all(response.as_bytes());
+    });
+    port
 }
 
-#[test]
-fn test_layout_tree_has_attributes() {
-    let html = r#"<html><body><img src="test.jpg" alt="Test"></body></html>"#;
-    let doc = HtmlDocument::parse(html);
-    let computed = vec![];
-    let tree = build_layout_tree(&doc, &computed, None);
+#[tokio::test]
+async fn test_dump_basic() {
+    let html = r##"<!DOCTYPE html><html><head><title>Test</title></head><body><h1>Hello</h1></body></html>"##;
+    let port = start_server_with_html(html);
+    let output = "/tmp/faf_test_dump_basic_result.html";
 
-    let body = tree.children.iter().find(|c| c.tag == "body").unwrap();
-    let img = body.children.iter().find(|c| c.tag == "img").unwrap();
-    assert_eq!(img.attributes.get("src"), Some(&"test.jpg".to_string()));
-    assert_eq!(img.attributes.get("alt"), Some(&"Test".to_string()));
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "dump",
+        "--output",
+        output,
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok(), "dump should succeed: {:?}", result);
+
+    let saved = std::fs::read_to_string(output).unwrap();
+    assert!(saved.contains("Hello"));
+    assert!(saved.contains("<h1>"));
+    let _ = std::fs::remove_file(output);
 }
 
-// ---------------------------------------------------------------------------
-// T050 — Imagens <img>
-// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_dump_resolves_relative_urls() {
+    let html = r##"<!DOCTYPE html><html><body><a href="/about">About</a><img src="/img/photo.png"></body></html>"##;
+    let port = start_server_with_html(html);
+    let output = "/tmp/faf_test_dump_urls.html";
 
-#[test]
-fn test_screenshot_image_fallback_placeholder() {
-    // URL inválida para forçar fallback
-    let html = r#"
-        <html><body>
-            <img src="http://127.0.0.1:1/invalid.png" style="width: 50px; height: 50px;">
-        </body></html>
-    "#;
-    let doc = HtmlDocument::parse(html);
-    let output = "/tmp/faf_test_image_fallback.png";
-    let config = ScreenshotConfig {
-        width: 400,
-        height: 200,
-    };
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "dump",
+        "--output",
+        output,
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok(), "dump should succeed: {:?}", result);
 
-    render_to_image(&doc, &config, output).expect("render should succeed even with broken image");
-    assert!(Path::new(output).exists(), "screenshot should exist");
-    let meta = fs::metadata(output).expect("should read metadata");
-    assert!(meta.len() > 0, "screenshot should not be empty");
-
-    // Cleanup
-    let _ = fs::remove_file(output);
-}
-
-#[test]
-fn test_border_width_zero_by_default() {
-    let html = "<html><body><div>Box</div></body></html>";
-    let doc = HtmlDocument::parse(html);
-    let css = "div { color: black; }";
-    let sheet = parse_css(css).unwrap();
-    let results = compute_styles(&doc, &sheet);
-
-    assert_eq!(results.len(), 1);
-    let (_, style) = &results[0];
-    assert_eq!(style.border_top_width, "0");
-    assert_eq!(style.border_right_width, "0");
-    assert_eq!(style.border_bottom_width, "0");
-    assert_eq!(style.border_left_width, "0");
-    assert_eq!(style.border_top_color, "transparent");
-    assert_eq!(style.border_top_style, "none");
-}
-
-// ---------------------------------------------------------------------------
-// T051 — Relative positioning
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_relative_positioning_offset() {
-    let html = r#"
-        <html><head><style>
-            .box { position: relative; top: 20px; left: 15px; width: 50px; height: 50px; }
-        </style></head><body>
-            <div class="box">A</div>
-        </body></html>
-    "#;
-    let doc = HtmlDocument::parse(html);
-    let css = doc.extract_css().unwrap_or_default();
-    let sheet = parse_css(&css).unwrap();
-    let computed = compute_styles(&doc, &sheet);
-    let mut tree = build_layout_tree(&doc, &computed, None);
-    compute_layout(&mut tree, 400.0);
-
-    let body = tree.children.iter().find(|c| c.tag == "body").unwrap();
-    let div = body.children.iter().find(|c| c.tag == "div").unwrap();
-
+    let saved = std::fs::read_to_string(output).unwrap();
+    let expected = format!("http://127.0.0.1:{}/about", port);
     assert!(
-        (div.rect.y() - 20.0).abs() < 0.1,
-        "relative top=20px should offset y, got y={}",
-        div.rect.y()
+        saved.contains(&expected),
+        "Expected absolute URL containing {}",
+        expected
     );
-    assert!(
-        (div.rect.x() - 15.0).abs() < 0.1,
-        "relative left=15px should offset x, got x={}",
-        div.rect.x()
-    );
+    let _ = std::fs::remove_file(output);
 }
 
-// ---------------------------------------------------------------------------
-// T052 — z-index
-// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_dump_no_scripts() {
+    let html = r##"<html><head><script>alert('xss')</script></head><body><button onclick="evil()">Click</button></body></html>"##;
+    let port = start_server_with_html(html);
+    let output = "/tmp/faf_test_dump_no_scripts.html";
 
-#[test]
-fn test_z_index_computed_and_render() {
-    let html = r#"
-        <html><head><style>
-            .back { z-index: 1; position: relative; width: 100px; height: 100px; background-color: red; }
-            .front { z-index: 2; position: relative; width: 100px; height: 100px; background-color: blue; }
-        </style></head><body>
-            <div class="back"></div>
-            <div class="front"></div>
-        </body></html>
-    "#;
-    let doc = HtmlDocument::parse(html);
-    let output = "/tmp/faf_test_zindex.png";
-    let config = ScreenshotConfig {
-        width: 400,
-        height: 200,
-    };
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "dump",
+        "--output",
+        output,
+        "--no-scripts",
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok(), "dump should succeed: {:?}", result);
 
-    render_to_image(&doc, &config, output).expect("render should succeed with z-index");
-    assert!(Path::new(output).exists(), "screenshot should exist");
-    let meta = fs::metadata(output).expect("should read metadata");
-    assert!(meta.len() > 0, "screenshot should not be empty");
-
-    let css = doc.extract_css().unwrap_or_default();
-    let sheet = parse_css(&css).unwrap();
-    let results = compute_styles(&doc, &sheet);
-    let z_values: Vec<&str> = results.iter().map(|(_, s)| s.z_index.as_str()).collect();
-    assert!(z_values.contains(&"1"), "should have z-index 1");
-    assert!(z_values.contains(&"2"), "should have z-index 2");
-
-    let _ = fs::remove_file(output);
+    let saved = std::fs::read_to_string(output).unwrap();
+    assert!(!saved.contains("alert"));
+    assert!(!saved.contains("onclick"));
+    assert!(saved.contains("<button"));
+    let _ = std::fs::remove_file(output);
 }
 
-// ---------------------------------------------------------------------------
-// T053 — Background renderizado
-// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn test_dump_preserves_existing_styles() {
+    let html = r##"<!DOCTYPE html><html><head><style>.red { color: red; }</style></head><body><h1 class="red">Red</h1></body></html>"##;
+    let port = start_server_with_html(html);
+    let output = "/tmp/faf_test_dump_styles.html";
 
-#[test]
-fn test_screenshot_background_rendered() {
-    let html = r#"
-        <html><head><style>
-            div { background-color: green; width: 100px; height: 100px; }
-        </style></head><body>
-            <div></div>
-        </body></html>
-    "#;
-    let doc = HtmlDocument::parse(html);
-    let output = "/tmp/faf_test_background.png";
-    let config = ScreenshotConfig {
-        width: 400,
-        height: 200,
-    };
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "dump",
+        "--output",
+        output,
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok(), "dump should succeed: {:?}", result);
 
-    render_to_image(&doc, &config, output).expect("render should succeed");
-    assert!(Path::new(output).exists(), "screenshot should exist");
-    let meta = fs::metadata(output).expect("should read metadata");
-    assert!(meta.len() > 0, "screenshot should not be empty");
-
-    let _ = fs::remove_file(output);
+    let saved = std::fs::read_to_string(output).unwrap();
+    assert!(saved.contains(".red { color: red; }"));
+    assert!(saved.contains("<style>"));
+    let _ = std::fs::remove_file(output);
 }
-
-// ---------------------------------------------------------------------------
-// T054 — Text wrap
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_text_wrap_narrow_viewport() {
-    let html = r#"
-        <html><head><style>
-            p { width: 40px; font-size: 20px; }
-            span { font-size: 20px; }
-        </style></head><body>
-            <p>aaaa<span></span>bbbb<span></span>cccc</p>
-        </body></html>
-    "#;
-    let doc = HtmlDocument::parse(html);
-    let css = doc.extract_css().unwrap_or_default();
-    let sheet = parse_css(&css).unwrap();
-    let computed = compute_styles(&doc, &sheet);
-    let mut tree = build_layout_tree(&doc, &computed, None);
-    compute_layout(&mut tree, 100.0);
-
-    let body = tree.children.iter().find(|c| c.tag == "body").unwrap();
-    let p = body.children.iter().find(|c| c.tag == "p").unwrap();
-    let children: Vec<_> = p.children.iter().collect();
-    assert!(children.len() >= 3, "should have multiple inline children");
-
-    let ys: Vec<f32> = children.iter().map(|c| c.rect.y()).collect();
-    let mut unique_ys = ys.clone();
-    unique_ys.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    unique_ys.dedup_by(|a, b| (*a - *b).abs() < 1.0);
-    assert!(
-        unique_ys.len() > 1,
-        "text should wrap producing multiple lines, got ys={:?}",
-        ys
-    );
-}
-
-// ---------------------------------------------------------------------------
-// T055 — Regressão de profundidade
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_deep_nesting_regression() {
-    let mut html = String::from("<html><body>");
-    for i in 0..50 {
-        html.push_str(&format!("<div class=\"d{}\">", i));
-    }
-    html.push_str("Deep content");
-    for _ in 0..50 {
-        html.push_str("</div>");
-    }
-    html.push_str("</body></html>");
-
-    let doc = HtmlDocument::parse(&html);
-    let computed = vec![];
-    let tree = build_layout_tree(&doc, &computed, None);
-
-    fn max_depth(node: &faf_browser::render::tree::VisualNode) -> usize {
-        1 + node.children.iter().map(max_depth).max().unwrap_or(0)
-    }
-
-    let depth = max_depth(&tree);
-    assert!(
-        depth >= 50,
-        "deep nesting should not break tree construction, depth={}",
-        depth
-    );
-}
-

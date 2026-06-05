@@ -189,21 +189,22 @@ pub struct WatchArgs {
 }
 
 #[derive(clap::Args, Debug)]
-pub struct ScreenshotArgs {
-    /// URL para capturar
-    pub url: String,
-
-    /// Largura do viewport em pixels (default: 1280)
-    #[arg(long = "width", default_value = "1280")]
-    pub width: u32,
-
-    /// Altura do viewport em pixels (default: 0 = scroll inteiro)
-    #[arg(long = "height", default_value = "0")]
-    pub height: u32,
-
-    /// Caminho do arquivo PNG de saída
-    #[arg(long = "output", default_value = "screenshot.png")]
+pub struct DumpArgs {
+    /// Caminho do arquivo HTML de saída
+    #[arg(long = "output", default_value = "page.html")]
     pub output: String,
+
+    /// Converter imagens para base64 inline
+    #[arg(long = "inline-images")]
+    pub inline_images: bool,
+
+    /// Não inlinear CSS externo (manter <link>)
+    #[arg(long = "no-inline-css")]
+    pub no_inline_css: bool,
+
+    /// Remover scripts da página
+    #[arg(long = "no-scripts")]
+    pub no_scripts: bool,
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -227,27 +228,23 @@ pub enum Command {
     Click(ClickArgs),
     /// Monitorar mudanças em uma URL ou elemento
     Watch(WatchArgs),
-    /// Capturar screenshot da página como PNG
-    Screenshot(ScreenshotArgs),
+    /// Gerar HTML autocontido da página
+    Dump(DumpArgs),
     /// Modo interativo REPL para executar múltiplos comandos JS
     Repl(ReplArgs),
 }
 
 /// Executa o comando CLI
 pub async fn run(cli: Cli) -> anyhow::Result<()> {
-    // Se não tem URL, mostra ajuda (ou usa URL do subcomando screenshot)
+    // Se não tem URL, mostra ajuda
     let url = match cli.url_flag.as_ref().or(cli.url.as_ref()) {
         Some(u) => u.clone(),
         None => {
-            if let Some(Command::Screenshot(args)) = &cli.command {
-                args.url.clone()
-            } else {
-                println!("FAF BROWSER v{}", env!("CARGO_PKG_VERSION"));
-                println!("Uso: faf <url> [opções]");
-                println!("     faf query 'h1' --url https://site.com");
-                println!("     faf links --url https://site.com");
-                return Ok(());
-            }
+            println!("FAF BROWSER v{}", env!("CARGO_PKG_VERSION"));
+            println!("Uso: faf <url> [opções]");
+            println!("     faf query 'h1' --url https://site.com");
+            println!("     faf links --url https://site.com");
+            return Ok(());
         }
     };
 
@@ -855,29 +852,23 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 }
             }
         }
-        Some(Command::Screenshot(args)) => {
-            let config = crate::render::screenshot::ScreenshotConfig {
-                width: args.width,
-                height: args.height,
+        Some(Command::Dump(args)) => {
+            let config = crate::dump::DumpConfig {
+                inline_images: args.inline_images,
+                inline_css: !args.no_inline_css,
+                remove_scripts: args.no_scripts,
+                base_url: url.clone(),
             };
 
-            // block_in_place permite reqwest::blocking dentro do runtime tokio sem crash
-            tokio::task::block_in_place(|| {
-                crate::render::screenshot::render_to_image_with_base(
-                    &doc,
-                    &config,
-                    &args.output,
-                    Some(&url),
-                )
-            })?;
+            crate::dump::dump_to_file(&html, &config, &args.output)?;
 
-            if cli.json {
+            if format == "json" {
                 println!(
                     "{}",
-                    serde_json::json!({"screenshot": args.output, "width": args.width, "height": args.height })
+                    serde_json::json!({"dump": args.output, "url": url})
                 );
             } else {
-                println!("📸 Screenshot salvo em: {}", args.output);
+                println!("💾 HTML salvo em: {}", args.output);
             }
         }
         Some(Command::Repl(_args)) => {

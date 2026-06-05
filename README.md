@@ -1,739 +1,197 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/status-active-2ea043?style=for-the-badge">
-  <img alt="Status" src="https://img.shields.io/badge/status-active-2ea043?style=for-the-badge">
-</picture>
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/Rust-Edition_2024-orange?style=for-the-badge&logo=rust">
-  <img alt="Rust" src="https://img.shields.io/badge/Rust-Edition_2024-orange?style=for-the-badge&logo=rust">
-</picture>
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/test-214_passed-green?style=for-the-badge">
-  <img alt="Tests" src="https://img.shields.io/badge/test-214_passed-green?style=for-the-badge">
-</picture>
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge">
-  <img alt="License" src="https://img.shields.io/badge/license-MIT-blue?style=for-the-badge">
-</picture>
-
-<br>
-
 <p align="center">
-  <img src="logo.png" alt="FAF Browser Logo" width="600">
+  <img src="logo.png" alt="FAF Browser" width="600">
 </p>
 
-# ⚡ FAF BROWSER
+<p align="center">
+  <a href="https://github.com/tiagoc93/faf-browser/actions"><img src="https://img.shields.io/badge/status-active-2ea043?style=flat-square" alt="Status"></a>
+  <a href="#"><img src="https://img.shields.io/badge/Rust-Edition%202024-orange?style=flat-square&logo=rust" alt="Rust 2024"></a>
+  <a href="#"><img src="https://img.shields.io/badge/tests-273%20passed-green?style=flat-square" alt="Tests"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT"></a>
+  <a href="#"><img src="https://img.shields.io/badge/binary-~2MB-lightgrey?style=flat-square" alt="Binary"></a>
+</p>
 
-### Fast As Fuck — Navegador Headless 100% Rust
+# faf — headless browser for the terminal
 
-> *"O Chrome pesa 500MB de RAM? A gente faz em 50MB."*
+> *A ~2MB single binary that fetches, parses, executes JS, and dumps self-contained HTML. No Electron. No Chromium. Just Rust.*
 
-FAF Browser é um navegador headless minimalista e agressivamente rápido, construído do zero em Rust. Sem Electron, sem Chromium embutido, sem overhead. Um binário único que faz scraping, crawleamento, **execução de JavaScript** e inspeção de páginas web com performance nativa.
-
-Renderizado pelo CSS Engine próprio. Runtime **QuickJS** embarcado para execução de JavaScript. Crawleador multithread. Tudo em **menos de 1MB** de binário.
-
----
-
-## ✨ Features
-
-| Feature | Status |
-|---------|--------|
-| 🌐 **HTTP Client** — fetch páginas com proxy, timeout, headers customizáveis | ✅ |
-| 📄 **Parser HTML** — DOM tree completa com html5ever | ✅ |
-| 🔍 **Query CSS** — seletores `h1`, `.class`, `#id`, `div span`, combinadores | ✅ |
-| 🎨 **CSS Engine** — parser, cascata, especificidade (inline > ID > class > tag) | ✅ |
-| 📐 **Box Model** — width, height, margin, padding computados | ✅ |
-| 🖌️ **Cores** — hex, rgb, rgba, 19 cores nomeadas | ✅ |
-| 🔤 **Fontes** — family, size (px/em/rem/%), weight (100-900) | ✅ |
-| 📊 **Computed Styles** — estilos reais da página (parseia `<style>` e `<link>` automagicamente) | ✅ |
-| 📸 **Screenshot** — render PNG com texto real e CSS via `ab_glyph` + `tiny-skia` | ✅ **M7** |
-| 📝 **Texto Real** — renderização com ab_glyph (100% Rust, sem freetype) | ✅ **M7** |
-| 📐 **position: absolute + fixed** — containing block, viewport fallback | ✅ **M7** |
-| 📏 **Text Rendering** — ab_glyph real (não heurística), text-align, line-height | ✅ **M7** |
-| 🫧 **Overflow** — hidden com clip, visible, scroll | ✅ **M7** |
-| ⚡ **Font Cache** — carrega uma vez, reusa em todos os nós | ✅ **M7** |
-| 🌐 **CSS Externo** — baixa `<link rel="stylesheet">` automaticamente | ✅ **M7** |
-| 🔗 **URLs Relativas** — resolve imagens e CSS contra base URL | ✅ **M7** |
-| 🌳 **Layout Tree** — DOM → árvore visual block/inline com herança de estilo | ✅ **M6** |
-| 📐 **Layout Engine** — block flow com margin collapsing, inline flow com text wrap | ✅ **M6** |
-| 🎨 **Backgrounds** — cores de fundo nos elementos + body viewport | ✅ **M6** |
-| 🧱 **Bordas CSS** — border-width/color/style com shorthand | ✅ **M6** |
-| 🖼️ **Imagens `<img>`** — decode JPEG/PNG/WebP + fallback placeholder | ✅ **M6** |
-| 📌 **Positioning** — relative + z-index ordering | ✅ **M6** |
-| 🔎 **Filtros** — `--filter "text~=Python"`, `--filter "href^=https"`, regex | ✅ |
-| 🎯 **Extração seletiva** — `--get "text, href"` — só os campos que importam | ✅ |
-| 🕷️ **Crawler** — `faf follow` — siga links, visite páginas, extraia dados | ✅ |
-| 📋 **Múltiplos formatos** — texto, JSON, JSONL, CSV | ✅ |
-| 🔌 **Proxy** — HTTP e SOCKS5 | ✅ |
-| 🟨 **JavaScript Engine** — QuickJS `rquickjs` com DOM bridge, timers, fetch | ✅ **NOVO** |
-| 🍪 **Cookies** — `--cookies` e `--cookies-jar` — sessão persistente Netscape | ✅ **NOVO** |
-| ⏳ **Wait** — `faf wait \".produto\"` — aguarda elemento carregar no DOM | ✅ **NOVO** |
-| 💻 **REPL** — `faf repl --url <url>` e `--stdin` para pipes | ✅ **NOVO** |
-| 🐌 **Delay** — `--delay` e `--random-delay` entre requests | ✅ **NOVO** |
-| 🔁 **Retry** — `--retries N` com exponential backoff + 429 handling | ✅ **NOVO** |
-| 📋 **HTTP Info** — `--show-headers` e `--show-status` na resposta | ✅ **NOVO** |
-| 💾 **Cache** — `--cache .cache` com TTL configurável e SHA256 | ✅ **NOVO** |
-| 🔗 **Fetch API bridge** — `fetch()` no JS chama o reqwest do Rust | ✅ **NOVO** |
-| ⏱️ **setTimeout / setInterval** — timers integrados com event loop tokio | ✅ **NOVO** |
-| 📜 **Script tags** — execução automática de `<script>` inline e externo | ✅ **NOVO** |
-| 📦 **Binário único** — ~1MB, zero dependências runtime | ✅ |
-| 🧪 **214 testes** — unitários + integração em sites reais | ✅ |
+**FAF** is a CLI tool for scraping, crawling, and archiving web pages. It speaks CSS selectors, runs JavaScript via QuickJS, handles cookies, retries, proxies, and outputs data as JSON, CSV, JSONL, or self-contained HTML.
 
 ---
 
-## 🚀 Quick Start
-
-### Instalação
+## Quick install
 
 ```bash
-# Clone e compile
-git clone https://github.com/tiagoc93/faf-browser.git
-cd faf-browser
-cargo build --release
-
-# O binário estará em ./target/release/faf-browser
-sudo cp ./target/release/faf-browser /usr/local/bin/faf
+cargo install --git https://github.com/tiagoc93/faf-browser.git
+# or
+git clone https://github.com/tiagoc93/faf-browser.git && cd faf-browser && cargo build --release
 ```
 
-### Pré-requisitos
-
-- Rust (edition 2024) — instale via [rustup](https://rustup.rs/)
-- Linux x86_64 (suporte a mais plataformas em breve)
+Requires **Rust** (edition 2024) via [rustup](https://rustup.rs/). Linux x86_64.
 
 ---
 
-## 📖 Uso
+## Features
 
-### 🔥 Novidades M4 — Crawler Profissional
-
-```bash
-# Esperar elemento carregar (útil para SPAs)
-faf wait ".produto" --url https://loja.com --timeout 10
-
-# REPL interativo
-faf repl --url https://books.toscrape.com/
-> document.title
-> document.querySelectorAll(".price_color").length
-
-# Pipe de JS via --stdin
-echo 'document.querySelector("h1").textContent' | faf --stdin --url https://books.toscrape.com/
-
-# Crawler com delay entre requests
-faf https://books.toscrape.com/ follow ".product_pod h3 a" \
-  --extract "h3, .price_color" \
-  --max 10 --delay 1000 --random-delay 500 1500
-
-# Retry automático em falhas
-faf https://site-instavel.com --retries 3 --retry-delay 2000 --show-status
-
-# Cache em disco
-faf https://site.com --cache .faf-cache --show-status
-# → Primeira: cache MISS, Segunda: cache HIT
-
-# Headers e status na resposta
-faf https://httpbin.org/get --show-headers --show-status --json
-
-# Sessão com cookies persistente
-faf https://site.com/login --cookies session.txt --cookies-jar session.txt
-faf https://site.com/dados --cookies session.txt --show-status
-```
-
-### Execução de JavaScript 🔥
-
-```bash
-# Ler título da página
-faf https://books.toscrape.com/ --js "document.title"
-# → "All products | Books to Scrape - Sandbox"
-
-# Query no DOM
-faf https://books.toscrape.com/ --js "document.querySelectorAll('h3').length"
-# → 20
-
-# Fetch API real (chama reqwest do Rust!)
-faf https://httpbin.org/get --js "fetch('https://httpbin.org/get').text()" --json
-# → { "args": {}, "headers": {...}, "origin": "...", "url": "..." }
-
-# Executar arquivo .js
-faf https://site.com --js-file script.js
-
-# Desabilitar scripts da página
-faf https://site.com --js "document.title" --no-scripts
-
-# Timeout customizado para JS
-faf https://site.com --js "while(true){}" --js-timeout 2
-# → "JavaScript execution timed out after 2s"
-```
-
-### Extração completa de página
-
-```bash
-faf https://books.toscrape.com/
-```
-
-```
-📄 Página: https://books.toscrape.com/
-📌 Título: All products | Books to Scrape - Sandbox
-🔗 Links: 94
-🖼️ Imagens: 20
-📋 Metadados: 4
-
-📝 Texto:
-Books to Scrape We love being scraped! Home All products ...
-```
-
-### Query CSS com estilos computados
-
-```bash
-faf https://books.toscrape.com/ query "h1"
-```
-
-```
-🔍 Query 'h1': 1 resultado(s)
-  [1.] <h1> texto: All products
-      🎨 color: inherit | bg: transparent | font-size: 29.96px | font-family: serif | display: block
-```
-
-> O CSS é extraído automaticamente da página (`<style>` + `<link rel="stylesheet">`). Use `--no-page-css` para desabilitar.
-
-### Subcomandos
-
-```bash
-faf https://site.com links           # Todos os links da página
-faf https://site.com images          # Todas as imagens
-faf https://site.com metadata        # Open Graph, title, description
-faf https://site.com query "h2"      # Query CSS customizada
-```
-
-### CSS customizado
-
-```bash
-# CSS inline
-faf https://site.com --css "h1 { color: red; font-size: 24px; }" query "h1"
-
-# Arquivo CSS
-faf https://site.com --css style.css query ".card"
-```
-
-### Filtros 🔥
-
-```bash
-# Filtro por texto (substring)
-faf https://books.toscrape.com/ query "a" --filter "text~=Sapiens"
-
-# Filtro por atributo
-faf https://books.toscrape.com/ query "a" --filter "href^=https" --get "text, href"
-
-# Filtro por regex
-faf https://site.com query "img" --filter "alt=.+"
-
-# Múltiplos filtros (AND)
-faf https://site.com query "div" --filter "class~=product" --filter "text!=."
-
-# Operadores disponíveis:
-#   !~=  negative substring match (case insensitive)
-#   !^=  does NOT start with
-#   !$=  does NOT end with
-#   ~=  substring match (case insensitive)
-#   ==  exact match
-#   !=  negated exact match
-#   ^=  starts with
-#   $=  ends with
-#   =   regex (auto-detect) ou substring
-```
-
-### Extração seletiva de campos
-
-```bash
-# Campos do elemento
-faf https://site.com query "a" --get "text, href"
-
-# Campos do computed style
-faf https://site.com --css "h1 { color: red; }" query "h1" --get "text, color, font-size"
-
-# Campos disponíveis: tag, id, classes, text, html, href, src, alt,
-#                     color, bg, font-size, font-family, display
-```
-
-### Crawleamento com `follow` 🕷️
-
-```bash
-# Crawlear produtos
-faf https://books.toscrape.com/ follow ".product_pod h3 a" \
-  --extract "h3, .price_color" \
-  --max 5 \
-  --json
-
-# Crawlear com filtro + campos específicos
-faf https://books.toscrape.com/ follow ".product_pod h3 a" \
-  --extract "h3, .price_color" \
-  --max 10 \
-  --concurrency 5 \
-  --get "text" \
-  --format csv
-```
-
-### Formatos de saída
-
-```bash
-# JSON pretty
-faf https://site.com query "h1" --json
-
-# JSONL (1 objeto por linha — pipe-friendly)
-faf https://site.com query "a" --get "text, href" --format jsonl | head -5
-
-# CSV
-faf https://site.com query "a" --get "text, href" --format csv
-
-# CSV com follow
-faf https://site.com follow "a" --max 3 --format csv
-```
-
-### JSON
-
-```bash
-faf https://books.toscrape.com/ --json
-```
-
-```json
-{
-  "url": "https://books.toscrape.com/",
-  "title": "All products | Books to Scrape - Sandbox",
-  "links": [
-    ["Books to Scrape", "index.html"],
-    ["Travel", "catalogue/category/books/travel_2/index.html"]
-  ],
-  "images": [
-    ["A Light in the Attic", "media/cache/2c/da/...jpg"]
-  ],
-  "metadata": {
-    "description": "",
-    "viewport": "width=device-width"
-  },
-  "text": "Books to Scrape We love being scraped!..."
-}
-```
-
-### Outras opções
-
-```bash
-# Proxy (HTTP ou SOCKS5)
-faf https://site.com --proxy socks5://localhost:9050
-
-# Timeout customizado
-faf https://site.com --timeout 60
-
-# User-Agent customizado
-faf https://site.com --user-agent "FAFBrowser/1.0"
-
-# Modo verboso (logs)
-faf https://site.com -v
-
-# Desabilitar CSS da página
-faf https://site.com --no-page-css query "h1"
-
-# Desabilitar execução de scripts da página
-faf https://site.com --js "document.title" --no-scripts
-```
-
----
-
-## 🏗️ Arquitetura
-
-```
-faf-browser/
-├── src/
-│   ├── main.rs              # Entry point (#[tokio::main])
-│   ├── lib.rs               # Módulos públicos
-│   ├── api/
-│   │   ├── mod.rs
-│   │   ├── commands.rs      # CLI (clap), execução de comandos
-│   │   ├── output.rs        # Formatadores: JSON, CSV, JSONL, texto
-│   │   └── filter.rs        # Sistema de filtros (text match, regex, attr)
-│   ├── http/
-│   │   ├── mod.rs
-│   │   └── client.rs        # HTTP client (reqwest, proxy, timeout)
-│   ├── dom/
-│   │   ├── mod.rs
-│   │   └── parser.rs        # DOM tree (scraper/html5ever)
-│   ├── css/
-│   │   ├── mod.rs
-│   │   ├── parser.rs        # Parser CSS (cssparser)
-│   │   ├── selector.rs      # Selector matching + especificidade
-│   │   ├── style.rs         # Computed styles + cascata
-│   │   ├── color.rs         # Cores (hex, rgb, rgba, named)
-│   │   ├── font.rs          # Fontes (family, size, weight)
-│   │   └── layout.rs        # Box model (margin, padding, width, height)
-│   ├── js/
-│   │   ├── mod.rs
-│   │   ├── engine.rs        # Runtime QuickJS (rquickjs)
-│   │   ├── dom_bridge.rs    # Ponte DOM ↔ JS (document.querySelector, etc)
-│   │   └── fetch_bridge.rs  # Ponte fetch ↔ reqwest (HTTP do JS)
-│   ├── render/
-│   │   ├── mod.rs
-│   │   └── screenshot.rs    # Renderização PNG (tiny-skia + ab_glyph)
-│   └── utils/
-│       ├── mod.rs
-│       ├── config.rs        # Configurações (retry, cache, cookies, etc)
-│       └── error.rs         # Tipos de erro
-├── tests/
-│   ├── fixtures/            # Dados de teste
-│   ├── m2_test.rs           # Testes de integração M2 (CSS)
-│   ├── m3_test.rs           # Testes de integração M3 (JS)
-│   └── m4_test.rs           # Testes de integração M4 (cookies, wait, cache, retry, etc)
-├── Cargo.toml
-└── README.md
-```
-
-### Stack
-
-| Componente | Crate | Função |
+| | | |
 |---|---|---|
-| HTTP | `reqwest` + `tokio` | Requests assíncronos, proxy SOCKS5, cookies |
-| HTML/DOM | `scraper` (html5ever) | Parse e query na DOM tree |
-| CSS Parser | `cssparser` | Tokenização e parsing de folhas de estilo |
-| CSS Selectors | `selectors` | Matching e especificidade |
-| CSS Layout | `tiny-skia` | Box model, formas e render 2D |
-| **Renderização** | **`ab_glyph`** | **Rasterização de texto (Rust puro, sem freetype)** |
-| CLI | `clap` (derive) | Interface de linha de comando |
-| Serialização | `serde` + `serde_json` | Output JSON, CSV, JSONL |
-| JS Runtime | `rquickjs` (QuickJS) | Runtime JavaScript embarcado |
-| Regex | `regex` | Filtros com expressões regulares |
+| **HTTP** | proxy (HTTP/SOCKS5), timeout, custom user-agent, retry with exponential backoff | ✅ |
+| **HTML** | full DOM tree via html5ever, CSS selectors (`h1`, `.class`, `#id`, combinators) | ✅ |
+| **CSS** | parser, cascade, specificity, computed styles, inline + external stylesheets | ✅ |
+| **JavaScript** | QuickJS runtime, DOM bridge, `fetch()`, `setTimeout`, `<script>` execution | ✅ |
+| **Dump** | self-contained HTML with inlined CSS, base64 images, resolved URLs, optional script removal | ✅ |
+| **Crawl** | `follow` links with concurrency, rate-limiting, filters, and selective extraction | ✅ |
+| **Output** | JSON, JSONL, CSV, plain text — pipe-friendly | ✅ |
+| **Session** | persistent cookies (Netscape format), response caching (SHA256 + TTL) | ✅ |
+| **Interaction** | click, form fill, watch for changes, scroll simulation | ✅ |
+| **Performance** | ~300ms first query, ~5MB RAM per page, single binary | ✅ |
 
 ---
 
-## 📊 Comparação
+## Usage
 
-| Feature | BeautifulSoup | Playwright | FAF Browser |
-|---------|:---:|:---:|:---:|
-| **Velocidade** | 🐌 Python | 🟡 Node.js | 🚀 Rust nativo |
-| **Binário único** | ❌ | ❌ | ✅ ~1MB |
-| **CLI nativa** | ❌ precisa script | ❌ precisa script | ✅ 1 comando |
-| **CSS Selectors** | ✅ `select()` | ✅ `page.$()` | ✅ `query()` |
-| **Computed Styles** | ❌ | ✅ | ✅ próprio engine |
-| **CSS da página** | ❌ | ✅ | ✅ automático |
-| **Filtros** | ✅ `re.compile` | ✅ `filter()` | ✅ `--filter` |
-| **Crawler embutido** | ❌ | ❌ | ✅ `follow` |
-| **JSONL/CSV** | ❌ manual | ❌ manual | ✅ nativo |
-| **JavaScript** | ❌ | ✅ | ✅ **QuickJS** |
-| **DOM bridge JS** | ❌ | ✅ | ✅ `document.querySelector` |
-| **Fetch via JS** | ❌ | ✅ | ✅ `fetch()` → reqwest |
-| **Scripts da página** | ❌ | ✅ | ✅ `<script>` execução |
-| **Screenshots** | ❌ | ✅ | ✅ **ab_glyph + tiny-skia** |
-| **RAM (página média)** | ~50MB | ~150MB | ~5MB |
-| **Tempo 1ª query** | ~2s | ~3s | ~0.3s |
-| **Cookies persistente** | ✅ `requests.Session` | ✅ `context.cookies()` | ✅ `--cookies` + `--cookies-jar` |
-| **Wait/Timeout** | ❌ `time.sleep()` | ✅ `page.wait_for_selector()` | ✅ `faf wait \".sel\"` |
-| **Retry automático** | ❌ manual | ❌ manual | ✅ `--retries N` + backoff |
-| **Cache em disco** | ❌ manual | ❌ manual | ✅ `--cache .cache` |
-| **REPL/Pipe** | ❌ | ❌ | ✅ `faf repl` + `--stdin` |
-
----
-
-## 🛣️ Roadmap
-
-### ✅ M1 — Core Engine (Concluído)
-- [x] HTTP Client com proxy e timeout
-- [x] Parser HTML → DOM tree
-- [x] CLI com clap
-- [x] Output JSON
-
-### ✅ M2 — CSS Engine (Concluído)
-- [x] Parser CSS (cssparser)
-- [x] Selector matching + especificidade
-- [x] Computed styles + cascata (inline > ID > class > tag)
-- [x] Box model, cores, fontes
-- [x] Estilos automáticos da página (`<style>` + `<link>`)
-
-### ✅ M2.5 — Extração Avançada (Concluído)
-- [x] `--filter` com regex e attribute match
-- [x] `--get` para campos específicos
-- [x] `follow` subcomando — crawler multithread
-- [x] `--format csv|jsonl`
-- [x] 180 testes, 0 falhas
-
-### ✅ M3 — JavaScript Engine (Concluído)
-- [x] Runtime QuickJS embarcado (`rquickjs`)
-- [x] Bridge DOM ↔ JS: `document.getElementById`, `querySelector`
-- [x] `setTimeout` / `setInterval` com event loop tokio
-- [x] `fetch()` API — chamadas HTTP reais via reqwest
-- [x] Timeout de execução JS (proteção contra loop infinito)
-- [x] `console.log/warn/error` → Rust logger
-- [x] Error handling com stack traces legíveis
-- [x] Execução de `<script>` tags inline + externas
-- [x] CLI: `faf --js "document.title"` e `--js-file`
-- [x] 266 testes, 0 falhas
-
-### ✅ M4 — Ferramentas de Crawler Profissional (Concluído)
-- [x] 🍪 **Cookies** — `--cookies` e `--cookies-jar` com formato Netscape, sessão persistente
-- [x] ⏳ **Wait** — `faf wait \".produto\"` aguarda elemento carregar com timeout e polling
-- [x] 💻 **REPL** — `faf repl --url <url>` modo interativo + `--stdin` para pipes
-- [x] 🐌 **Delay** — `--delay N` e `--random-delay MIN MAX` no `follow`
-- [x] 🔁 **Retry** — `--retries N` com exponential backoff (500, 429, timeout)
-- [x] 📋 **HTTP Info** — `--show-headers` e `--show-status` na resposta
-- [x] 💾 **Cache** — `--cache .faf-cache` com SHA256 + TTL configurável
-- [x] 🧪 266 testes, 0 falhas
-
-### ✅ M5 — Interação com Páginas (Concluído 🎉)
-
-| Task | Feature | Status |
-|------|---------|--------|
-| **T039** | **Click** — `dispatchEvent` via JS | ✅ |
-| **T040** | **Formulários** — fill + select + submit | ✅ |
-| **T041** | **Screenshot** — render PNG via tiny-skia + ab_glyph | ✅ |
-| **T042** | **Watch** — monitorar mudanças com polling | ✅ |
-| **T043** | **Scroll** — scrollTo/scrollBy/scrollIntoView | ✅ |
-| **T044** | **Testes M5** — 9 testes de integração | ✅ |
-
-#### 🔧 Fix Crítico no M5 — Screenshot com Texto Real
-
-O screenshot do M5 estava gerando **tela em branco** devido a dois bugs:
-
-| Bug | Causa | Solução |
-|-----|-------|---------|
-| **font-kit bug no Linux** | Loader freetype tem `// TODO: woefully incomplete` — glifos retornam alpha=0 | Migrado p/ `ab_glyph` (100% Rust, zero C) |
-| **Coordenadas relativas no draw()** | `outline.draw()` fornece coordenadas RELATIVAS ao bbox, não absolutas | Soma de `px_bounds.min` |
-
-**Antes:** 172 pixels de texto, apenas 14 linhas (y=0-13)
-**Agora:** 1.122 pixels de texto preto, **304 linhas (y=3 a 799) — 38% da página**
-
-```
-📦 61 tasks · ✅ 61 concluídas · MVP Completo! 🎉
-🧪 287 testes · 0 falhas · clippy limpo · build 0 warnings
-```
-
-|   ✅ Concluído 8/8 tasks  •  287 testes  •  clippy limpo  •  ~300KB binário  |
-|:--------------------------------------------------------------------------:|
-
-### ✅ M6 — Layout Engine (Concluído 🎉)
-
-O FAF Browser agora tem um motor de layout PRÓPRIO com árvore visual, fluxo block/inline, quebra de texto, margin collapsing, cores de fundo, bordas, imagens e posicionamento.
-
-#### Antes e Depois
-
-| Aspecto | M5 (lista plana) | M6 (árvore visual) |
-|---------|:----------------:|:------------------:|
-| Layout | Lista plana, x=0 | Árvore block/inline |
-| Text wrap | ❌ Tudo na mesma linha | ✅ Quebra automática |
-| Backgrounds | Parcial | ✅ Herdado do CSS |
-| Bordas | ❌ | ✅ solid |
-| Imagens | ❌ | ✅ decode + render |
-| Positioning | ❌ | ✅ relative + z-index |
-
-| Task | Feature | Status |
-|------|---------|:------:|
-| **T045** | **Layout Tree** — DOM → árvore visual block/inline via scraper | ✅ |
-| **T046** | **Inline Flow** — texto em linha com quebra automática (text-wrap) | ✅ |
-| **T047** | **Block Flow** — empilhamento vertical com margin collapsing | ✅ |
-| **T048** | **Background rendering** — cores de fundo reais | ✅ |
-| **T049** | **Bordas CSS** — border-width, border-color, solid | ✅ |
-| **T050** | **Imagens `<img>`** — decode (image crate) + fallback | ✅ |
-| **T051** | **Positioning** — relative + z-index | ✅ |
-| **T052** | **Testes M6** — 9 testes de integração visual | ✅ |
-
-#### Commits M6
-
-| Commit | O que fez |
-|--------|-----------|
-| `71db35f` | T045 — layout tree (VisualNode, build_layout_tree) |
-| `d4b4193` | T045-T048 — layout engine + screenshot árvore + 711 linhas |
-| `908c616` | T049-T050 — bordas CSS + imagens + 585 linhas |
-| `1f15905` | T051-T052 — relative positioning + z-index + testes |
-
-#### Stack M6 (adicionado)
-
-| Crate | Versão | Função |
-|-------|--------|--------|
-| `image` | 0.25 | Decodificação JPEG/PNG/WebP |
-| — | — | Layout engine 100% std (algoritmos próprios) |
-
----
-
-### ✅ M7 — Playwright Parity + Polish (Concluído 🎉)
-
-Fechar as lacunas restantes pra screenshot fiel: absolute positioning, text rendering real, overflow, performance.
-
-| Task | Feature | Status |
-|------|---------|:------:|
-| **T053** | **position: absolute + fixed** — containing block, viewport | ✅ |
-| **T054** | **Text Rendering Accuracy** — ab_glyph real, text-align, line-height, font-weight | ✅ |
-| **T055** | **Overflow Handling** — hidden com clip, visible | ✅ |
-| **T056** | **Performance & Font Cache** — cache de fontes, skip viewport, benchmark | ✅ |
-| **T057** | **Testes M7** — 10 testes de integração | ✅ |
-| **T058** | **CSS Externo + URLs Relativas** — `<link>` stylesheets + base URL | ✅ |
+### Dump a self-contained HTML
 
 ```bash
-📦 6 tasks · ✅ 6 concluídas · 297 testes · 0 falhas
-🎯 Screenshot fiel, < 500ms, 227KB CSS externo carregado
+faf dump --url https://books.toscrape.com/ --output page.html
+faf dump --url https://site.com --output page.html --inline-images --no-scripts
 ```
 
-Veja `TASKS_M7.md` para specs detalhadas.
+The output is a **single HTML file** you can open in any browser. External CSS is inlined. URLs are resolved to absolute. Scripts and event handlers are removed with `--no-scripts`. Images are converted to base64 data URIs with `--inline-images`.
 
----
-
-### ✅ M8 — Layout Parity (float, inline-block, flex) (Concluído 🎉)
-
-Fechar o gap de layout engine que impede renderização de páginas com grid/flex/float.
-
-| Task | Feature | Status |
-|------|---------|:------:|
-| **T059** | **display: inline-block** — participates in inline flow com width/height | ✅ |
-| **T060** | **float: left/right** — sai do fluxo normal, posiciona lateralmente | ✅ |
-| **T061** | **display: flex** — direction row/column, justify-content, align-items | ✅ |
-| **T062** | **CSS Matching melhorado** — simplified inline flow, single-pass | ✅ |
-| **T063** | **background-image** — computed style parsing | ✅ |
-| **T064** | **Testes M8** — 12 testes de integração | ✅ |
+### Scrape data
 
 ```bash
-📦 6 tasks · ✅ 6 concluídas · 309 testes · 0 falhas
-🎯 Layout parity: inline-block, float, flex — 12 novos testes
+faf https://books.toscrape.com/                      # full page info
+faf https://site.com query "h1" --json               # CSS query
+faf https://site.com query "a" --get "text,href"     # selective fields
+faf https://site.com query "div" --filter "class~=product" --filter "text!=."
 ```
 
-Veja `TASKS_M8.md` para specs detalhadas.
-
----
-
-### 🔧 M8.5 — Fidelidade Visual (Concluído 🎉)
-
-Correções para atingir paridade visual com Playwright/Chromium na página books.toscrape.com.
-
-| Task | Feature | Status |
-|------|---------|:------:|
-| **T065** | `box-sizing: border-box` — computado no box model | ✅ |
-| **T066** | Seletor universal `*` — regras globais CSS | ✅ |
-| **T067** | Filtrar pseudo-elementos `::before/::after` | ✅ |
-| **T068** | Extrair CSS de @media queries (min-width) | ✅ |
-| **T069** | Suporte a `background-image` | ✅ |
-| **T070** | Strip IE hacks `\9` / `\0` no `css_to_pixels` | ✅ |
-| **T071** | `safe_fill_rect()` — previne crash tiny-skia | ✅ |
-| **T072** | `block_in_place` — previne crash tokio | ✅ |
-| **T073** | Fallback 100×100 para `<img>` sem dimensões | ✅ |
+### Crawl
 
 ```bash
-📦 9 tasks · ✅ 9 concluídas · 310 testes · 0 falhas
-🛡️ Zero crashes: safe_fill_rect + block_in_place
-```
-
----
-
-### ✅ M8.6 — Dimensões Intrínsecas (Concluído)
-
-Confirmado via comparação com screenshot Playwright: os primeiros livros de books.toscrape.com NÃO têm imagem no HTML (DOM sem `src` ou `src=""`). O sistema de dimensões intrínsecas está funcional — usa 100×100 fallback quando não há dados.
-
-|| Task | Feature | Status |
-|------|---------|:------:|
-| **T075** | Filtrar pseudo-classes (`:hover`, `:before`, `:after`) | ✅ |
-| **T076** | Baixar dimensões via HTTP, cache LRU 200 entries | ✅ |
-| **T074** | Colapso de altura: intrinsic_width/intrinsic_height | ✅ |
-
-```bash
-📦 3 tasks · ✅ 3 concluídas · 214 testes · 0 falhas
-🖼️ 40 imagens processadas (dimensões), altura ~2044px
-```
-
----
-
-### 🚧 M8.7 — Renderização de Imagens Reais (Em andamento)
-
-**Bug identificado:** Imagens são baixadas e cacheadas (20 entries em `/tmp/image_cache/`), mas NÃO aparecem no screenshot. Caixas brancas vazias onde deveriam estar capas de livros.
-
-**Diagnóstico:**
-- `RENDER_CALL` log confirma: img nodes encontrados no visual tree com coordenadas corretas (ex: `tag="img" rect=Rect { left: 30.0, top: 1243.9998, right: 155.0, bottom: 1398.9998 } children=0`)
-- `RENDER_DRAW` log NUNCA aparece para tags "img" — o bloco `if draw_w > 0.0 && draw_h > 0.0` não está sendo executado para nós img
-- `draw_image` NUNCA é chamado (sem logs DRAW_IMAGE)
-- Pixel analysis do screenshot: apenas pixels #EEEEEE (fundo cinza) na área de produtos, ZERO pixels coloridos
-
-**Hipótese:** O visual tree para imagens está sendo construído corretamente, mas há algo no código de renderização que impede o drawing block de ser executado para img nodes.
-
-**Task para o coder:** `TASKS_M8_7_DEBUG.md`
-
-|| Task | Feature | Status |
-|------|---------|:------:|
-| **T077** | `image_cache.rs` — cache de imagens baixadas (bytes→Pixmap) | 🔄 |
-| **T078** | Modificar screenshot.rs — baixar imagens ANTES do layout | 🔄 |
-| **T079** | Renderizar `<img>` — extrair Pixmap do cache e desenhar | 🔄 |
-| **T080** | Scale/preserve aspect ratio nas imagens | 🔄 |
-| **T081** | Testes de integração e validação visual | 🔄 |
-
-**Specs:** `TASKS_M8_7.md`
-
-**Estado atual:**
-- `image_dimensions.rs` existe e busca DIMENSÕES (não pixels)
-- `image` crate (0.25) já é dependência do projeto
-- tiny_skia já é usado para renderização
-- Precisa: cache de pixels + render em `<img>`
-
-**Critério de sucesso:** Screenshot books.toscrape.com mostra capas coloridas (não placeholder cinza), altura > 4000px, estrelas ★★★★★ visíveis.
-
-## 🧪 Testes
-
-```bash
-# Rodar todos os testes
-cargo test
-
-# Verificar lint
-cargo clippy
-
-# Build release
-cargo build --release
-
-# 266 testes, 0 falhas, clippy limpo
-```
-
----
-
-## 📈 Performance
-
-FAF Browser é construído com foco obsessivo em performance:
-
-- **Binário release:** ~1MB (com LTO + strip)
-- **Primeira query:** ~300ms (vs ~2s Playwright)
-- **RAM por página:** ~5MB (vs ~150MB Chrome headless)
-- **Concorrência nativa:** tokio async + semaphore no crawler
-- **CSS Engine:** cascata O(n) com especificidade em memória
-- **JS Engine:** QuickJS inicializa em ~10ms
-
-```bash
-# Crawlear 10 páginas em paralelo em < 5s
 faf https://books.toscrape.com/ follow ".product_pod h3 a" \
-  --extract "h3, .price_color" \
-  --max 10 \
-  --concurrency 5 \
-  --format csv > produtos.csv
+  --extract "h3,.price_color" --max 10 --format csv
 
-# Executar JS e extrair dados estruturados
-faf https://books.toscrape.com/ \
-  --js "document.querySelectorAll('.product_pod').length" \
-  --json
-# → 20
+faf https://site.com follow "a" --max 5 --delay 1000 --random-delay 500 2000
+```
+
+### JavaScript
+
+```bash
+faf https://site.com --js "document.title"
+faf https://site.com --js-file script.js
+echo 'document.querySelectorAll(".price").length' | faf --stdin --url https://site.com
+```
+
+### Interaction
+
+```bash
+faf click "#btn" --url https://site.com
+faf wait ".spinner" --url https://site.com --timeout 10
+faf watch ".price" --url https://site.com --interval 30 --max-checks 5
+```
+
+### Session & network
+
+```bash
+faf https://site.com --proxy socks5://127.0.0.1:9050
+faf https://site.com --cookies session.txt --cookies-jar session.txt
+faf https://site.com --cache .cache --show-headers --show-status
+faf https://site.com --retries 3 --retry-delay 2000
 ```
 
 ---
 
-## 🤝 Contribuindo
+## Comparison
 
-1. Fork o projeto
-2. Crie sua branch (`git checkout -b feat/feature`)
-3. Commit suas mudanças (`git commit -m 'feat: adiciona feature'`)
-4. Push (`git push origin feat/feature`)
-5. Abra um Pull Request
+| | BeautifulSoup | Playwright | **FAF** |
+|---|---:|---:|---:|
+| Language | Python | Node.js | **Rust** |
+| Single binary | ❌ | ❌ | **✅** |
+| CSS selectors | ✅ | ✅ | ✅ |
+| Computed styles | ❌ | ✅ | ✅ |
+| JavaScript | ❌ | ✅ (V8) | ✅ (QuickJS) |
+| Built-in crawler | ❌ | ❌ | ✅ |
+| HTML dump (self-contained) | ❌ | ❌ | ✅ |
+| JSONL/CSV native | ❌ | ❌ | ✅ |
+| RAM (avg page) | ~50MB | ~150MB | **~5MB** |
+| First query | ~2s | ~3s | **~0.3s** |
+| Cookies / Cache / Retry | ❌ | ❌ | ✅ |
 
-### Padrão de commits
-
-Usamos [conventional commits](https://www.conventionalcommits.org/):
-- `feat:` — nova feature
-- `fix:` — correção de bug
-- `docs:` — documentação
-- `refactor:` — refatoração
-- `chore:` — manutenção
-
----
-
-## 📄 Licença
-
-MIT © [Tiago Coelho](https://github.com/tiagoc93)
+FAF is **not** a browser automation tool. It won't render SPAs pixel-perfect or drive a real browser. It is a **high-performance scraping and page-archiving CLI** that beats curl+pup+jq in convenience and speed.
 
 ---
 
-<p align="center">
-  <b>Fast As Fuck</b> — porque navegador não precisa ser pesado.<br>
-  Feito com 🦀 e ☕ em Recife, Brasil.
-</p>
+## Architecture
+
+```
+src/
+├── api/           CLI (clap), commands, output formatters, filters
+├── http/          reqwest client, response cache, cookie store
+├── dom/           HTML parser (scraper/html5ever)
+├── css/           CSS parser (cssparser), selectors, computed styles
+├── js/            QuickJS runtime (rquickjs), DOM bridge, fetch bridge
+├── dump/          self-contained HTML generation, CSS/image inlining
+└── utils/         config, error types
+```
+
+| Component | Crate |
+|---|---|
+| HTTP | `reqwest` (rustls), `tokio` |
+| HTML | `scraper` (html5ever) |
+| CSS | `cssparser`, `selectors` |
+| JS | `rquickjs` (QuickJS) |
+| CLI | `clap`, `serde`, `serde_json` |
+| Encoding | `base64`, `sha2`, `hex`, `regex` |
+
+---
+
+## Roadmap
+
+### ✅ M1 — Core Engine
+HTTP client, HTML parsing, CLI, JSON output
+
+### ✅ M2 — CSS Engine
+Parser, selector matching, specificity, computed styles, box model
+
+### ✅ M2.5 — Advanced Extraction
+`--filter`, `--get`, `follow` crawler, CSV/JSONL output
+
+### ✅ M3 — JavaScript Engine
+QuickJS runtime, DOM bridge, `fetch()`, `setTimeout`, page scripts
+
+### ✅ M4 — Professional Crawler Tools
+Cookies, wait, REPL, rate-limiting, retry, cache, HTTP info
+
+### ✅ M5 — Page Interaction
+Click, forms, watch mode, scroll simulation
+
+### ✅ M6 — Self-Contained HTML Dump
+CSS inlining, image-to-base64, URL resolution, script removal
+
+---
+
+### ⬜ M7 — LLM-Ready Output (coming next)
+
+| Task | Description |
+|---|---|
+| **T090** | `dump --format markdown` — convert HTML to clean Markdown for LLM consumption |
+| **T091** | `dump --readability` — extract main content, strip navigation/ads/footers |
+| **T092** | Structured data extraction — JSON-LD, microdata, schema.org, Open Graph |
+| **T093** | `dump --text` — clean visible text extraction, paragraph-preserving |
+| **T094** | Tests M7 — unit + integration tests for all new output formats |
+
+---
+
+## Contributing
+
+```bash
+cargo test
+cargo clippy
+cargo fmt
+```
+
+Conventional commits: `feat:`, `fix:`, `docs:`, `refactor:`, `chore:`.
+
+MIT © [Tiago Coelho](https://github.com/tiagoc93) — Recife, Brasil.
