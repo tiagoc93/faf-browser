@@ -467,12 +467,6 @@ output:
 ```
 Git-versionable, reproducible, shareable. Like Scrapy but in Rust and without the framework overhead.
 
-### 🖥️ Optional Real Browser (WebKit via wry)
-A `--real-browser` flag that spins up a lightweight WebKit view (via `wry`/`tauri`) for sites that genuinely need a real JS engine — React SPAs, Next.js, etc. The default mode stays fast (QuickJS). The opt-in unlocks the sites you can't scrape today.
-
-### 📦 Cross-Platform Binaries via CI
-GitHub Actions matrix build: Linux x86_64 + ARM64, macOS Intel + Apple Silicon, Windows. Published to Homebrew tap and Winget. Without cross-platform binaries, FAF stays a Linux-only tool. With them, it becomes a general-purpose utility the community can install in one command on any OS.
-
 ---
 
 ## Contributing
