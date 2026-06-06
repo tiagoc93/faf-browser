@@ -7,7 +7,6 @@ pub mod text;
 pub mod url_resolver;
 
 use std::fs;
-use std::io::Write;
 use std::path::Path;
 
 use crate::dump::css_inline::inline_css;
@@ -42,23 +41,13 @@ impl Default for DumpConfig {
     }
 }
 
-pub fn dump_to_file(html: &str, config: &DumpConfig, output_path: &str) -> anyhow::Result<()> {
+pub fn dump_to_string(html: &str, config: &DumpConfig) -> anyhow::Result<String> {
     let mut result = html.to_string();
 
     if config.structured_data {
         log::info!("Extraindo dados estruturados...");
         let data = extract_structured_data(&result);
-        let json_str = serde_json::to_string_pretty(&data)?;
-
-        let path = Path::new(output_path);
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                fs::create_dir_all(parent)?;
-            }
-        }
-        fs::write(path, json_str.as_bytes())?;
-        log::info!("Dados estruturados salvos em {} ({} bytes)", output_path, json_str.len());
-        return Ok(());
+        return Ok(serde_json::to_string_pretty(&data)?);
     }
 
     if config.remove_scripts {
@@ -76,10 +65,8 @@ pub fn dump_to_file(html: &str, config: &DumpConfig, output_path: &str) -> anyho
         result = inline_images(&result, &config.base_url);
     }
 
-    if !config.structured_data {
-        log::info!("Resolvendo URLs relativas...");
-        result = resolve_urls_in_html(&result, &config.base_url);
-    }
+    log::info!("Resolvendo URLs relativas...");
+    result = resolve_urls_in_html(&result, &config.base_url);
 
     if config.readability {
         log::info!("Extraindo conteúdo principal (readability)...");
@@ -98,17 +85,23 @@ pub fn dump_to_file(html: &str, config: &DumpConfig, output_path: &str) -> anyho
         _ => {}
     }
 
+    Ok(result)
+}
+
+pub fn dump_to_file(html: &str, config: &DumpConfig, output_path: &str) -> anyhow::Result<()> {
+    let result = dump_to_string(html, config)?;
+    write_to_file(&result, output_path)
+}
+
+pub fn write_to_file(content: &str, output_path: &str) -> anyhow::Result<()> {
     let path = Path::new(output_path);
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
             fs::create_dir_all(parent)?;
         }
     }
-
-    let mut file = fs::File::create(path)?;
-    file.write_all(result.as_bytes())?;
-
-    log::info!("HTML dump salvo em {} ({} bytes)", output_path, result.len());
+    fs::write(path, content)?;
+    log::info!("Arquivo salvo em {} ({} bytes)", output_path, content.len());
     Ok(())
 }
 

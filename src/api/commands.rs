@@ -190,9 +190,9 @@ pub struct WatchArgs {
 
 #[derive(clap::Args, Debug)]
 pub struct DumpArgs {
-    /// Caminho do arquivo HTML de saída
-    #[arg(long = "output", default_value = "page.html")]
-    pub output: String,
+    /// Caminho do arquivo HTML de saída (stdout se omitido)
+    #[arg(long = "output")]
+    pub output: Option<String>,
 
     /// Converter imagens para base64 inline
     #[arg(long = "inline-images")]
@@ -875,15 +875,24 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 structured_data: args.structured_data,
             };
 
-            crate::dump::dump_to_file(&html, &config, &args.output)?;
+            let result_html = crate::dump::dump_to_string(&html, &config)?;
 
-            if format == "json" {
-                println!(
-                    "{}",
-                    serde_json::json!({"dump": args.output, "url": url})
-                );
+            if let Some(ref output_path) = args.output {
+                crate::dump::write_to_file(&result_html, output_path)?;
+                if format == "json" {
+                    println!(
+                        "{}",
+                        serde_json::json!({"dump": output_path, "url": url})
+                    );
+                } else {
+                    println!("💾 HTML salvo em: {}", output_path);
+                }
             } else {
-                println!("💾 HTML salvo em: {}", args.output);
+                use std::io::Write;
+                let stdout = std::io::stdout();
+                let mut handle = stdout.lock();
+                handle.write_all(result_html.as_bytes())?;
+                handle.flush()?;
             }
         }
         Some(Command::Repl(_args)) => {

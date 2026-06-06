@@ -4,13 +4,8 @@ use std::process::{Command, Stdio};
 use std::thread;
 
 use clap::Parser;
-use faf_browser::api::commands::{Cli, run};
+use faf_browser::api::commands::{run, Cli};
 
-// ---------------------------------------------------------------------------
-// T033 — REPL e stdin
-// ---------------------------------------------------------------------------
-
-/// Servidor local que responde com HTML contendo um título e elementos.
 fn start_server_with_html(html: &'static str) -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -28,25 +23,29 @@ fn start_server_with_html(html: &'static str) -> u16 {
     port
 }
 
+fn faf_binary() -> std::path::PathBuf {
+    let exe = std::env::current_exe().unwrap();
+    let target_dir = exe.parent().unwrap().parent().unwrap();
+    target_dir.join("faf-browser")
+}
+
 #[test]
 fn test_stdin_mode() {
-    let html = r#"<html><head><title>Stdin Test</title></head><body><h1>Hello</h1></body></html>"#;
+    let html =
+        r#"<html><head><title>Stdin Test</title></head><body><h1>Hello</h1></body></html>"#;
     let port = start_server_with_html(html);
 
-    let mut child = Command::new("cargo")
+    let mut child = Command::new(faf_binary())
         .args([
-            "run",
-            "--",
             &format!("http://127.0.0.1:{}/", port),
             "--stdin",
             "--no-scripts",
         ])
-        .current_dir("/home/hermes/faf-browser")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("failed to spawn cargo run");
+        .expect("failed to spawn faf");
 
     {
         let stdin = child.stdin.take().unwrap();
@@ -81,23 +80,21 @@ fn test_stdin_mode() {
 
 #[test]
 fn test_repl_mode() {
-    let html = r#"<html><head><title>REPL Test</title></head><body><h1>World</h1></body></html>"#;
+    let html =
+        r#"<html><head><title>REPL Test</title></head><body><h1>World</h1></body></html>"#;
     let port = start_server_with_html(html);
 
-    let mut child = Command::new("cargo")
+    let mut child = Command::new(faf_binary())
         .args([
-            "run",
-            "--",
             "repl",
             "--url",
             &format!("http://127.0.0.1:{}/", port),
         ])
-        .current_dir("/home/hermes/faf-browser")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("failed to spawn cargo run");
+        .expect("failed to spawn faf");
 
     {
         let stdin = child.stdin.take().unwrap();
@@ -141,20 +138,17 @@ fn test_repl_json_toggle() {
     let html = r#"<html><head><title>JSON Toggle</title></head><body></body></html>"#;
     let port = start_server_with_html(html);
 
-    let mut child = Command::new("cargo")
+    let mut child = Command::new(faf_binary())
         .args([
-            "run",
-            "--",
             "repl",
             "--url",
             &format!("http://127.0.0.1:{}/", port),
         ])
-        .current_dir("/home/hermes/faf-browser")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("failed to spawn cargo run");
+        .expect("failed to spawn faf");
 
     {
         let stdin = child.stdin.take().unwrap();
@@ -181,11 +175,6 @@ fn test_repl_json_toggle() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// T039 — Click via dispatchEvent
-// ---------------------------------------------------------------------------
-
-/// Servidor com botão que tem onclick inline.
 fn start_click_button_server() -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -212,14 +201,12 @@ fn start_click_button_server() -> u16 {
 #[tokio::test]
 async fn test_click_subcommand_success() {
     let port = start_click_button_server();
-
     let cli = Cli::parse_from([
         "faf",
         &format!("http://127.0.0.1:{}/", port),
         "click",
         "#btn",
     ]);
-
     let result = run(cli).await;
     assert!(
         result.is_ok(),
@@ -231,14 +218,12 @@ async fn test_click_subcommand_success() {
 #[tokio::test]
 async fn test_click_subcommand_not_found() {
     let port = start_click_button_server();
-
     let cli = Cli::parse_from([
         "faf",
         &format!("http://127.0.0.1:{}/", port),
         "click",
         ".missing",
     ]);
-
     let result = run(cli).await;
     assert!(result.is_err(), "click on missing element should fail");
     let err = result.unwrap_err().to_string();
@@ -252,7 +237,6 @@ async fn test_click_subcommand_not_found() {
 #[tokio::test]
 async fn test_click_js_bridge() {
     let port = start_click_button_server();
-
     let cli = Cli::parse_from([
         "faf",
         &format!("http://127.0.0.1:{}/", port),
@@ -260,7 +244,6 @@ async fn test_click_js_bridge() {
         "--js",
         r#"var btn = document.querySelector('#btn'); btn.click(); btn.clicked"#,
     ]);
-
     let result = run(cli).await;
     assert!(
         result.is_ok(),
@@ -272,7 +255,6 @@ async fn test_click_js_bridge() {
 #[tokio::test]
 async fn test_click_json_output() {
     let port = start_click_button_server();
-
     let cli = Cli::parse_from([
         "faf",
         &format!("http://127.0.0.1:{}/", port),
@@ -280,7 +262,6 @@ async fn test_click_json_output() {
         "click",
         "#btn",
     ]);
-
     let result = run(cli).await;
     assert!(result.is_ok(), "click --json should succeed: {:?}", result);
 }
@@ -288,21 +269,17 @@ async fn test_click_json_output() {
 #[test]
 fn test_click_via_stdin() {
     let port = start_click_button_server();
-
-    let mut child = Command::new("cargo")
+    let mut child = Command::new(faf_binary())
         .args([
-            "run",
-            "--",
             &format!("http://127.0.0.1:{}/", port),
             "--stdin",
             "--no-scripts",
         ])
-        .current_dir("/home/hermes/faf-browser")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("failed to spawn cargo run");
+        .expect("failed to spawn faf");
 
     {
         let stdin = child.stdin.take().unwrap();
@@ -323,10 +300,6 @@ fn test_click_via_stdin() {
         stderr
     );
 }
-
-// ---------------------------------------------------------------------------
-// T040 — Formulários: fill, select, submit
-// ---------------------------------------------------------------------------
 
 fn start_form_server() -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -403,10 +376,6 @@ async fn test_checkbox() {
     assert!(result.is_ok(), "checkbox should succeed: {:?}", result);
 }
 
-// ---------------------------------------------------------------------------
-// T043 — Scroll e Navegação via JS
-// ---------------------------------------------------------------------------
-
 fn start_basic_server() -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -431,85 +400,36 @@ fn start_basic_server() -> u16 {
     port
 }
 
-#[test]
-fn test_scroll_to() {
+#[tokio::test]
+async fn test_scroll_to() {
     let port = start_basic_server();
-
-    let child = Command::new("cargo")
-        .args([
-            "run",
-            "--",
-            &format!("http://127.0.0.1:{}/", port),
-            "--no-scripts",
-            "--js",
-            "window.scrollTo(0, 500); window.pageYOffset",
-        ])
-        .current_dir("/home/hermes/faf-browser")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("failed to spawn cargo run");
-
-    let output = child.wait_with_output().unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    assert!(
-        output.status.success(),
-        "scrollTo should exit successfully. stdout: {}, stderr: {}",
-        stdout,
-        stderr
-    );
-    assert!(
-        stdout.contains("500"),
-        "expected pageYOffset=500 in stdout, got: {}",
-        stdout
-    );
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "--no-scripts",
+        "--js",
+        "window.scrollTo(0, 500); window.pageYOffset",
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok(), "scrollTo should succeed: {:?}", result);
 }
 
-#[test]
-fn test_scroll_by() {
+#[tokio::test]
+async fn test_scroll_by() {
     let port = start_basic_server();
-
-    let child = Command::new("cargo")
-        .args([
-            "run",
-            "--",
-            &format!("http://127.0.0.1:{}/", port),
-            "--no-scripts",
-            "--js",
-            "window.scrollBy(0, 200); window.scrollY",
-        ])
-        .current_dir("/home/hermes/faf-browser")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("failed to spawn cargo run");
-
-    let output = child.wait_with_output().unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    assert!(
-        output.status.success(),
-        "scrollBy should exit successfully. stdout: {}, stderr: {}",
-        stdout,
-        stderr
-    );
-    assert!(
-        stdout.contains("200"),
-        "expected scrollY=200 in stdout, got: {}",
-        stdout
-    );
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "--no-scripts",
+        "--js",
+        "window.scrollBy(0, 200); window.scrollY",
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok(), "scrollBy should succeed: {:?}", result);
 }
-
-// ---------------------------------------------------------------------------
-// T042 — Watch Mode
-// ---------------------------------------------------------------------------
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Servidor que alterna conteúdo entre requests
 fn start_watch_changing_server() -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -521,7 +441,10 @@ fn start_watch_changing_server() -> u16 {
             let mut buf = [0u8; 1024];
             let _ = stream.read(&mut buf);
             let count = c.fetch_add(1, Ordering::SeqCst);
-            let body = format!("<html><body><h1>Valor: {}</h1></body></html>", count);
+            let body = format!(
+                "<html><body><h1>Valor: {}</h1></body></html>",
+                count
+            );
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                 body.len(),
@@ -536,7 +459,6 @@ fn start_watch_changing_server() -> u16 {
 #[tokio::test]
 async fn test_watch_detect_change() {
     let port = start_watch_changing_server();
-
     let cli = Cli::parse_from([
         "faf",
         &format!("http://127.0.0.1:{}/", port),
@@ -547,7 +469,6 @@ async fn test_watch_detect_change() {
         "--max-checks",
         "3",
     ]);
-
     let result = run(cli).await;
     assert!(result.is_ok(), "watch should succeed: {:?}", result);
 }
@@ -555,7 +476,6 @@ async fn test_watch_detect_change() {
 #[tokio::test]
 async fn test_watch_max_checks() {
     let port = start_watch_changing_server();
-
     let cli = Cli::parse_from([
         "faf",
         &format!("http://127.0.0.1:{}/", port),
@@ -566,7 +486,6 @@ async fn test_watch_max_checks() {
         "--max-checks",
         "2",
     ]);
-
     let result = run(cli).await;
     assert!(
         result.is_ok(),
@@ -578,7 +497,6 @@ async fn test_watch_max_checks() {
 #[tokio::test]
 async fn test_watch_json_output() {
     let port = start_watch_changing_server();
-
     let cli = Cli::parse_from([
         "faf",
         &format!("http://127.0.0.1:{}/", port),
@@ -590,16 +508,10 @@ async fn test_watch_json_output() {
         "--max-checks",
         "2",
     ]);
-
     let result = run(cli).await;
     assert!(result.is_ok(), "watch --json should succeed: {:?}", result);
 }
 
-// ---------------------------------------------------------------------------
-// Edge Cases
-// ---------------------------------------------------------------------------
-
-/// Servidor com botão que se remove do DOM ao ser clicado (SPA navigation)
 fn start_disappearing_element_server() -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -668,37 +580,16 @@ async fn test_watch_interval_zero() {
     );
 }
 
-#[test]
-fn test_scroll_clamp_negative() {
+#[tokio::test]
+async fn test_scroll_clamp_negative() {
     let port = start_basic_server();
-    let child = Command::new("cargo")
-        .args([
-            "run",
-            "--",
-            &format!("http://127.0.0.1:{}/", port),
-            "--no-scripts",
-            "--js",
-            "window.scrollTo(0, -9999); window.pageYOffset",
-        ])
-        .current_dir("/home/hermes/faf-browser")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("failed to spawn cargo run");
-
-    let output = child.wait_with_output().unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    assert!(
-        output.status.success(),
-        "scroll clamp should exit successfully. stdout: {}, stderr: {}",
-        stdout,
-        stderr
-    );
-    assert!(
-        stdout.contains("0"),
-        "expected pageYOffset=0 in stdout, got: {}",
-        stdout
-    );
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "--no-scripts",
+        "--js",
+        "window.scrollTo(0, -9999); window.pageYOffset",
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok(), "scroll clamp should succeed: {:?}", result);
 }

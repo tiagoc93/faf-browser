@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://github.com/tiagoc93/faf-browser/actions"><img src="https://img.shields.io/badge/status-active-2ea043?style=flat-square" alt="Status"></a>
   <a href="#"><img src="https://img.shields.io/badge/Rust-Edition%202024-orange?style=flat-square&logo=rust" alt="Rust 2024"></a>
-  <a href="#"><img src="https://img.shields.io/badge/tests-309%20passed-green?style=flat-square" alt="Tests"></a>
+  <a href="#"><img src="https://img.shields.io/badge/tests-329%20passed-green?style=flat-square" alt="Tests"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT"></a>
   <a href="#"><img src="https://img.shields.io/badge/binary-~2MB-lightgrey?style=flat-square" alt="Binary"></a>
 </p>
@@ -54,6 +54,7 @@ Requires **Rust** (edition 2024) via [rustup](https://rustup.rs/). Linux x86_64.
 ```bash
 faf dump --url https://books.toscrape.com/ --output page.html
 faf dump --url https://site.com --output page.html --inline-images --no-scripts
+faf dump --url https://site.com --format markdown | head -20     # pipe to stdout
 ```
 
 The output is a **single HTML file** you can open in any browser. External CSS is inlined. URLs are resolved to absolute. Scripts and event handlers are removed with `--no-scripts`. Images are converted to base64 data URIs with `--inline-images`.
@@ -184,6 +185,20 @@ CSS inlining, image-to-base64, URL resolution, script removal
 
 ```
 📦 5 tasks · ✅ 5 concluídas · 309 testes · 0 falhas
+```
+
+### ✅ M8 — Polish & Robustness (done)
+
+| Task | Description |
+|---|---|
+| **T095** | Fix 7 broken tests in `m5_test.rs` — all 19 now pass |
+| **T096** | Integration test for `--inline-images` with PNG served locally |
+| **T097** | Output to stdout when `--output` is omitted (pipe support) |
+| **T098** | Optimize `Cargo.toml` profiles (`dev`, `release-fast`) |
+| **T099** | Update badges and docs — 329 tests, 0 failures |
+
+```
+📦 5 tasks · ✅ 5 concluídas · 329 testes · 0 falhas
 ```
 
 ---

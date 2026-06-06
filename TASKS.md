@@ -1,6 +1,6 @@
 # 🎯 Tasks — FAF BROWSER (Fast As Fuck)
 
-**Status:** M7 concluído | **Tests:** 309 | **Stack:** Rust + Cargo (Edition 2024)
+**Status:** M8 concluído | **Tests:** 329 | **Stack:** Rust + Cargo (Edition 2024)
 
 ---
 
@@ -783,6 +783,354 @@ cargo clippy                  # limpo
 
 ---
 
+## ✅ M8 — Polimento & Robustez (5 tasks · Concluído)
+
+**Objetivo:** Refinar o projeto para padrão profissional: testes confiáveis, build otimizado, experiência de uso fluida. Nenhuma feature nova — apenas qualidade.
+
+---
+
+### 🔴 T095 — Corrigir 7 testes quebrados em `m5_test.rs`
+
+**Problema:** 7 testes em `tests/m5_test.rs` spawnam `cargo run` como subprocesso (`Command::new("cargo").args(["run", ...])`). Isso falha porque o binário compilado não está no PATH e o `cargo run` depende do working directory. Resultado: `failed to spawn cargo run: No such file or directory`.
+
+**Testes afetados:**
+- `test_stdin_mode`
+- `test_repl_mode`
+- `test_repl_json_toggle`
+- `test_click_via_stdin`
+- `test_scroll_to`
+- `test_scroll_by`
+- `test_scroll_clamp_negative`
+
+**Solução:** Converter todos de `Command::new("cargo").args(["run", ...])` para chamar `run(Cli::parse_from([...])).await` diretamente, igual aos outros testes já fazem (m4_test, m6_test, m7_test).
+
+**Template de refatoração (ANTES → DEPOIS):**
+
+ANTES:
+```rust
+#[test]
+fn test_scroll_to() {
+    let port = start_basic_server();
+    let mut child = Command::new("cargo")
+        .args(["run", "--", &format!("http://127.0.0.1:{}/", port),
+                "--js", "window.scrollTo(0, 500); window.pageYOffset",
+                "--no-scripts"])
+        .current_dir("/home/hermes/faf-browser")
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn cargo run");
+    // ... read stdout, assert contains "500"
+}
+```
+
+DEPOIS:
+```rust
+#[tokio::test]
+async fn test_scroll_to() {
+    let port = start_basic_server();
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "--js", "window.scrollTo(0, 500); window.pageYOffset",
+        "--no-scripts",
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok(), "scroll should succeed: {:?}", result);
+}
+```
+
+**Importante:** Mudar `#[test]` para `#[tokio::test]` nos que usam `async`. Remover imports de `Command` e `Stdio` se não forem mais usados. Verificar se `start_basic_server()` suporta múltiplos requests (alguns testes usam stdin pipe — esses precisam de abordagem diferente).
+
+**Testes com stdin (PRECISAM de abordagem especial):**
+- `test_stdin_mode` — usa `child.stdin.write_all(b"...")` + pipe → NÃO pode usar `run()` direto
+- `test_repl_mode` — usa `child.stdin.write_all(b"...")` + pipe → NÃO pode usar `run()` direto
+- `test_repl_json_toggle` — usa `child.stdin.write_all(b"...")` → NÃO pode usar `run()` direto
+- `test_click_via_stdin` — usa `child.stdin.write_all(b"...")` → NÃO pode usar `run()` direto
+
+Para esses 4, a refatoração é diferente: em vez de spawnar `cargo run`, usar o binário compilado diretamente:
+
+```rust
+let binary = std::env::current_exe().unwrap(); // usa o binário de teste atual
+let mut child = Command::new(binary)
+    .args([&format!("http://127.0.0.1:{}/", port), "--stdin", "--no-scripts"])
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn()
+    .expect("failed to spawn faf");
+```
+
+Isso resolve o problema porque o binário de teste (`cargo test`) é o próprio `faf-browser`.
+
+**Critério de aceite:**
+```bash
+cargo test --test m5_test   # 19/19 passando (atualmente 12 passam, 7 falham)
+cargo test                   # todos os 316+ passando
+```
+
+---
+
+### 🟡 T096 — Teste de integração para `--inline-images`
+
+**Problema:** A funcionalidade `--inline-images` tem testes unitários em `src/dump/image_inline.rs` (lógica de download, MIME detection), mas nunca foi validada em teste de integração ponta-a-ponta com um servidor local servindo uma imagem real.
+
+**Solução:** Criar um teste em `tests/m7_test.rs` que:
+1. Inicia um servidor TcpListener que serve uma página HTML com `<img src="/img/photo.png">`
+2. O mesmo servidor, quando recebe request para `/img/photo.png`, retorna uma imagem PNG real (pode ser um PNG mínimo 1×1 gerado programaticamente)
+3. Roda `faf dump --inline-images --output /tmp/test_inline.html`
+4. Verifica que o arquivo de saída contém `data:image/png;base64,` (indicando que o src foi substituído por data URI)
+
+**Implementação detalhada:**
+
+**Passo 1 — Criar um PNG válido mínimo programaticamente:**
+
+```rust
+fn minimal_png_bytes() -> Vec<u8> {
+    // PNG 1x1 pixel vermelho (menor PNG válido possível)
+    vec![
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
+        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR chunk
+        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, // 1x1 pixels
+        0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+        0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, // IDAT chunk
+        0x54, 0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
+        0x00, 0x00, 0x03, 0x00, 0x01, 0x1A, 0x72, 0x5C,
+        0xD4, 0x74, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, // IEND chunk
+        0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ]
+}
+```
+
+**Passo 2 — Servidor que serve HTML + imagem:**
+
+```rust
+fn start_server_with_image() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    thread::spawn(move || {
+        for _ in 0..3 {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 4096];
+            let n = stream.read(&mut buf).unwrap();
+            let request = String::from_utf8_lossy(&buf[..n]);
+            
+            if request.contains("GET /img/photo.png") {
+                let png = minimal_png_bytes();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    png.len()
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+                stream.write_all(&png).unwrap();
+            } else {
+                let html = r##"<html><body><img src="/img/photo.png" alt="Test"></body></html>"##;
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    html.len(), html
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        }
+    });
+    port
+}
+```
+
+**Passo 3 — Teste:**
+
+```rust
+#[tokio::test]
+async fn test_inline_images_replaces_src_with_data_uri() {
+    let port = start_server_with_image();
+    let output = format!("/tmp/faf_test_inline_img_{}.html", std::process::id());
+
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "dump",
+        "--output", &output,
+        "--inline-images",
+        "--no-inline-css",
+        "--no-scripts",
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok(), "dump with inline-images should succeed: {:?}", result);
+
+    let saved = std::fs::read_to_string(&output).unwrap();
+    assert!(
+        saved.contains("data:image/png;base64,"),
+        "Expected data URI for image, got: {}",
+        if saved.len() > 500 { &saved[..500] } else { &saved }
+    );
+    assert!(
+        !saved.contains("/img/photo.png"),
+        "Original src should be replaced"
+    );
+    let _ = std::fs::remove_file(&output);
+}
+```
+
+**Critério de aceite:**
+```bash
+cargo test --test m7_test test_inline_images   # 1 novo teste passando
+```
+
+---
+
+### 🟡 T097 — Output para stdout quando `--output` não especificado
+
+**Problema:** Atualmente `--output` tem default `page.html`. Se o usuário quiser pipe, precisa de um arquivo temporário.
+
+**Solução:** Quando `--output` NÃO é passado explicitamente (ou é string vazia), escrever o resultado em stdout em vez de arquivo. Quando `--output` É passado, comportamento atual (salva em arquivo).
+
+**Implementação detalhada:**
+
+**Passo 1 — Alterar DumpArgs (commands.rs):**
+
+Remover o `default_value = "page.html"` e usar `Option<String>`:
+
+```rust
+#[derive(clap::Args, Debug)]
+pub struct DumpArgs {
+    /// Caminho do arquivo HTML de saída (stdout se omitido)
+    #[arg(long = "output")]
+    pub output: Option<String>,
+    // ... resto igual
+}
+```
+
+**Passo 2 — Alterar handler (commands.rs, no match Command::Dump):**
+
+```rust
+Some(Command::Dump(args)) => {
+    let config = crate::dump::DumpConfig {
+        // ... igual ...
+    };
+
+    let result_html = crate::dump::dump_to_string(&html, &config)?;
+
+    if let Some(ref output_path) = args.output {
+        // Salvar em arquivo (comportamento atual)
+        std::fs::write(output_path, &result_html)?;
+        if format == "json" {
+            println!("{}", serde_json::json!({"dump": output_path, "url": url}));
+        } else {
+            println!("💾 HTML salvo em: {}", output_path);
+        }
+    } else {
+        // Escrever em stdout
+        use std::io::Write;
+        let stdout = std::io::stdout();
+        let mut handle = stdout.lock();
+        handle.write_all(result_html.as_bytes())?;
+        handle.flush()?;
+    }
+}
+```
+
+**Passo 3 — Criar `dump_to_string()` em `src/dump/mod.rs`:**
+
+Mesma lógica de `dump_to_file()` mas retorna a String em vez de escrever em arquivo:
+
+```rust
+pub fn dump_to_string(html: &str, config: &DumpConfig) -> anyhow::Result<String> {
+    // ... mesmo pipeline de processamento ...
+    // return result; em vez de fs::write
+}
+```
+
+Refatorar `dump_to_file()` para chamar `dump_to_string()` internamente:
+
+```rust
+pub fn dump_to_file(html: &str, config: &DumpConfig, output_path: &str) -> anyhow::Result<()> {
+    let result = dump_to_string(html, config)?;
+    // ... create parent dirs, write file ...
+    Ok(())
+}
+```
+
+**Critério de aceite:**
+```bash
+faf dump --url https://httpbin.org/html --format markdown | head -5
+# → saída direta no terminal (sem arquivo)
+
+faf dump --url https://httpbin.org/html --output page.html
+# → comportamento atual mantido (salva em arquivo)
+
+cargo test  # todos passando
+```
+
+---
+
+### 🟡 T098 — Otimizar profiles de build no `Cargo.toml`
+
+**Problema:** O debug build (`cargo build` ou `cargo test`) demora ~20s+ porque compila todas as dependências com debug info completo e sem otimizações. O release build demora ~1min com LTO.
+
+**Solução:** Adicionar profiles customizados no `Cargo.toml` para acelerar o ciclo de desenvolvimento:
+
+**Passo 1 — Adicionar profile `dev` otimizado:**
+
+```toml
+[profile.dev]
+opt-level = 1           # otimizações leves (melhora ~30% performance de teste)
+debug = 1               # debug info reduzido (line tables only)
+incremental = true      # compilação incremental
+
+# Override para crates pesados: compilar com mais otimização
+[profile.dev.package."*"]
+opt-level = 1
+
+# Compilar dependências com opt-level 2 pra reduzir tempo de link
+[profile.dev.package.rquickjs]
+opt-level = 2
+[profile.dev.package.reqwest]
+opt-level = 2
+[profile.dev.package.tokio]
+opt-level = 2
+```
+
+**Passo 2 — Manter profile `release` atual:**
+
+```toml
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+strip = true
+```
+
+**Passo 3 — (Opcional) Adicionar profile `release-fast` sem LTO:**
+
+```toml
+[profile.release-fast]
+inherits = "release"
+lto = false             # sem LTO → build ~2x mais rápido
+codegen-units = 16      # paralelizar codegen
+strip = true
+```
+
+Uso: `cargo build --profile release-fast`
+
+**Critério de aceite:**
+```bash
+cargo clean && time cargo build          # mais rápido que antes
+cargo clean && time cargo test --no-run  # mais rápido que antes
+cargo build --release                    # ainda funciona, mesmo tempo (~1min)
+```
+
+---
+
+### 🟡 T099 — Atualizar badges e documentação final
+
+**O que fazer:** Após T095-T098 concluídos, atualizar:
+
+1. **README.md badges:** número de testes atualizado (316+)
+2. **README.md roadmap:** marcar M8 como concluído
+3. **TASKS.md header:** status atualizado
+4. **TASKS.md summary table:** M8 marcado como concluído
+
+---
+
 ## 📊 Resumo de Milestones
 
 | Milestone | Tasks | Status |
@@ -795,8 +1143,9 @@ cargo clippy                  # limpo
 | M4.5 — Refinamentos Pós-M4 | 3 | ✅ Concluído |
 | M5 — Interação com Páginas | 5 | ✅ Concluído |
 | M6 — Dump HTML Autocontido | 8 | ✅ Concluído |
-| **M7 — LLM-Ready Output** | **5** | **✅ Concluído** |
-| **Total** | **67** | **67 concluídas · 0 pendentes** |
+| M7 — LLM-Ready Output | 5 | ✅ Concluído |
+| **M8 — Polimento & Robustez** | **5** | **✅ Concluído** |
+| **Total** | **72** | **72 concluídas · 0 pendentes** |
 
 ---
 

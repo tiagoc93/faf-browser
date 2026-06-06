@@ -55,6 +55,11 @@ pub fn inline_images(html: &str, base_url: &str) -> String {
 }
 
 fn download_and_encode(url: &str) -> Option<String> {
+    let url = url.to_string();
+    tokio::task::block_in_place(|| download_and_encode_sync(&url))
+}
+
+fn download_and_encode_sync(url: &str) -> Option<String> {
     log::info!("Baixando imagem: {}", url);
     let client = match reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(10))

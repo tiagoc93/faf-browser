@@ -330,3 +330,99 @@ async fn test_text_output_skips_nav() {
     assert!(saved.contains("Content"), "got: {}", saved);
     let _ = std::fs::remove_file(&output);
 }
+
+// ── T096: Inline Images ─────────────────────────────────────────
+
+fn minimal_png_bytes() -> Vec<u8> {
+    vec![
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+        0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+        0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41,
+        0x54, 0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
+        0x00, 0x00, 0x03, 0x00, 0x01, 0x1A, 0x72, 0x5C,
+        0xD4, 0x74, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
+        0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ]
+}
+
+fn start_server_with_image() -> u16 {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    thread::spawn(move || {
+        for _ in 0..3 {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 4096];
+            let n = stream.read(&mut buf).unwrap();
+            let request = String::from_utf8_lossy(&buf[..n]);
+
+            if request.contains("GET /img/photo.png") {
+                let png = minimal_png_bytes();
+                let header = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    png.len()
+                );
+                stream.write_all(header.as_bytes()).unwrap();
+                stream.write_all(&png).unwrap();
+            } else {
+                let html = "<html><body><img src=\"/img/photo.png\" alt=\"Test\"></body></html>";
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    html.len(),
+                    html
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        }
+    });
+    port
+}
+
+#[test]
+fn test_inline_images_replaces_src_with_data_uri() {
+    use std::process::Command;
+
+    let port = start_server_with_image();
+    let output = format!("/tmp/faf_test_inline_img_{}.html", std::process::id());
+
+    let exe = std::env::current_exe().unwrap();
+    let target_dir = exe.parent().unwrap().parent().unwrap();
+    let faf_bin = target_dir.join("faf-browser");
+
+    let child = Command::new(&faf_bin)
+        .args([
+            "dump",
+            "--url",
+            &format!("http://127.0.0.1:{}/", port),
+            "--output",
+            &output,
+            "--inline-images",
+            "--no-inline-css",
+            "--no-scripts",
+        ])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn faf");
+
+    let out = child.wait_with_output().unwrap();
+
+    assert!(
+        out.status.success(),
+        "dump with inline-images should succeed. stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let saved = std::fs::read_to_string(&output).unwrap();
+    assert!(
+        saved.contains("data:image/png;base64,"),
+        "expected data URI, got first 500 chars: {}",
+        &saved[..saved.len().min(500)]
+    );
+    assert!(
+        !saved.contains("/img/photo.png"),
+        "original src should be replaced"
+    );
+    let _ = std::fs::remove_file(&output);
+}

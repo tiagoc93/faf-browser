@@ -57,6 +57,11 @@ pub fn inline_css(html: &str, base_url: &str) -> String {
 
 fn download_css(url: &str) -> Option<String> {
     log::info!("Baixando CSS: {}", url);
+    let url = url.to_string();
+    tokio::task::block_in_place(|| download_css_sync(&url))
+}
+
+fn download_css_sync(url: &str) -> Option<String> {
     match reqwest::blocking::get(url) {
         Ok(resp) if resp.status().is_success() => {
             resp.text().ok().map(|text| {
