@@ -64,7 +64,7 @@ fn score_content(element: scraper::ElementRef) -> f64 {
     let density = text_len / tag_count;
     let link_ratio = link_count / tag_count;
 
-    let mut score = density;
+    let mut score = text_len * (1.0 + (density / 10.0).min(1.5));
 
     if link_ratio > 0.3 {
         score *= 0.3;
@@ -79,6 +79,10 @@ fn score_content(element: scraper::ElementRef) -> f64 {
 
     if tag == "article" || tag == "main" {
         score *= 2.0;
+    }
+
+    if tag == "body" || tag == "html" {
+        score *= 0.65;
     }
 
     if let Some(id) = element.value().id() {
@@ -160,6 +164,7 @@ fn is_noise_element(element: scraper::ElementRef) -> bool {
         "nav", "menu", "sidebar", "footer", "header", "ad", "advertisement",
         "banner", "widget", "comment", "related", "social", "share", "cookie",
         "popup", "modal", "overlay", "newsletter", "subscribe",
+        "alert", "warning", "disclaimer", "notice",
     ];
 
     if let Some(id) = element.value().id() {

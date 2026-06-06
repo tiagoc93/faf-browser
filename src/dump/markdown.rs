@@ -28,15 +28,17 @@ fn convert_node(element: scraper::ElementRef, output: &mut String) {
                     "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
                         let level = tag.chars().nth(1).unwrap().to_digit(10).unwrap_or(1) as usize;
                         let prefix = "#".repeat(level);
-                        let text: String = el.text().collect();
-                        let trimmed = text.trim();
+                        let mut content = String::new();
+                        convert_node(el, &mut content);
+                        let trimmed = content.trim();
                         if !trimmed.is_empty() {
                             output.push_str(&format!("{} {}\n\n", prefix, trimmed));
                         }
                     }
                     "p" => {
-                        let text: String = el.text().collect();
-                        let trimmed = text.trim();
+                        let mut content = String::new();
+                        convert_node(el, &mut content);
+                        let trimmed = content.trim();
                         if !trimmed.is_empty() {
                             output.push_str(trimmed);
                             output.push_str("\n\n");
@@ -44,8 +46,9 @@ fn convert_node(element: scraper::ElementRef, output: &mut String) {
                     }
                     "a" => {
                         let href = el.value().attr("href").unwrap_or("");
-                        let text: String = el.text().collect();
-                        let trimmed = text.trim();
+                        let mut content = String::new();
+                        convert_node(el, &mut content);
+                        let trimmed = content.trim();
                         if !trimmed.is_empty() {
                             if !href.is_empty()
                                 && !href.starts_with("javascript:")
@@ -60,19 +63,21 @@ fn convert_node(element: scraper::ElementRef, output: &mut String) {
                         let src = el.value().attr("src").unwrap_or("");
                         let alt = el.value().attr("alt").unwrap_or("image");
                         if !src.is_empty() {
-                            output.push_str(&format!("![{}]({})\n\n", alt, src));
+                            output.push_str(&format!("![{}]({})", alt, src));
                         }
                     }
                     "strong" | "b" => {
-                        let text: String = el.text().collect();
-                        let trimmed = text.trim();
+                        let mut content = String::new();
+                        convert_node(el, &mut content);
+                        let trimmed = content.trim();
                         if !trimmed.is_empty() {
                             output.push_str(&format!("**{}**", trimmed));
                         }
                     }
                     "em" | "i" => {
-                        let text: String = el.text().collect();
-                        let trimmed = text.trim();
+                        let mut content = String::new();
+                        convert_node(el, &mut content);
+                        let trimmed = content.trim();
                         if !trimmed.is_empty() {
                             output.push_str(&format!("*{}*", trimmed));
                         }
@@ -80,10 +85,8 @@ fn convert_node(element: scraper::ElementRef, output: &mut String) {
                     "code" => {
                         let text: String = el.text().collect();
                         let trimmed = text.trim();
-                        if !trimmed.is_empty() && !is_inside_pre(el) {
+                        if !trimmed.is_empty() {
                             output.push_str(&format!("`{}`", trimmed));
-                        } else if !trimmed.is_empty() {
-                            output.push_str(trimmed);
                         }
                     }
                     "pre" => {
@@ -91,8 +94,9 @@ fn convert_node(element: scraper::ElementRef, output: &mut String) {
                         output.push_str(&format!("```\n{}\n```\n\n", text.trim()));
                     }
                     "blockquote" => {
-                        let text: String = el.text().collect();
-                        let trimmed = text.trim();
+                        let mut content = String::new();
+                        convert_node(el, &mut content);
+                        let trimmed = content.trim();
                         if !trimmed.is_empty() {
                             for line in trimmed.lines() {
                                 output.push_str(&format!("> {}\n", line));
@@ -112,8 +116,9 @@ fn convert_node(element: scraper::ElementRef, output: &mut String) {
                         for li in el.children() {
                             if let Some(li_el) = scraper::ElementRef::wrap(li) {
                                 if li_el.value().name().to_lowercase() == "li" {
-                                    let text: String = li_el.text().collect();
-                                    let trimmed = text.trim();
+                                    let mut content = String::new();
+                                    convert_node(li_el, &mut content);
+                                    let trimmed = content.trim();
                                     if !trimmed.is_empty() {
                                         if is_ordered {
                                             output.push_str(&format!("{}. {}\n", idx, trimmed));
@@ -137,19 +142,18 @@ fn convert_node(element: scraper::ElementRef, output: &mut String) {
                 }
             }
             scraper::Node::Text(text) => {
-                let txt = text.text.trim();
+                let txt: &str = text.text.as_ref();
                 if !txt.is_empty() {
-                    output.push_str(txt);
-                    output.push(' ');
+                    if txt.chars().all(char::is_whitespace) {
+                        output.push(' ');
+                    } else {
+                        output.push_str(txt);
+                    }
                 }
             }
             _ => {}
         }
     }
-}
-
-fn is_inside_pre(_element: scraper::ElementRef) -> bool {
-    false
 }
 
 fn convert_table(element: scraper::ElementRef, output: &mut String) {
@@ -273,5 +277,93 @@ mod tests {
         let html = "<h1>No body tag</h1>";
         let result = html_to_markdown(html);
         assert!(result.contains("# No body tag"));
+    }
+
+    #[test]
+    fn test_link_inside_heading() {
+        let html = r##"<html><body><h3><a href="/book">Book Title</a></h3></body></html>"##;
+        let result = html_to_markdown(html);
+        assert!(result.contains("### [Book Title](/book)"));
+    }
+
+    #[test]
+    fn test_image_inside_link_inside_heading() {
+        let html = r##"<html><body><h3><a href="/book"><img src="cover.jpg" alt="Cover"> Book Title</a></h3></body></html>"##;
+        let result = html_to_markdown(html);
+        assert!(result.contains("### [![Cover](cover.jpg) Book Title](/book)"));
+    }
+
+    #[test]
+    fn test_bold_inside_paragraph() {
+        let html = "<html><body><p>Hello <strong>world</strong> text</p></body></html>";
+        let result = html_to_markdown(html);
+        assert!(result.contains("Hello **world** text"));
+    }
+
+    #[test]
+    fn test_link_inside_paragraph() {
+        let html = r##"<html><body><p>Visit <a href="/about">About Us</a> today</p></body></html>"##;
+        let result = html_to_markdown(html);
+        assert!(result.contains("Visit [About Us](/about) today"));
+    }
+
+    #[test]
+    fn test_nested_inline_formatting() {
+        let html = "<html><body><p>Text <strong>bold <em>italic</em> more</strong> end</p></body></html>";
+        let result = html_to_markdown(html);
+        assert!(result.contains("Text **bold *italic* more** end"));
+    }
+
+    #[test]
+    fn test_blockquote_with_formatting() {
+        let html = r##"<html><body><blockquote><p>Quote <strong>bold</strong> text</p></blockquote></body></html>"##;
+        let result = html_to_markdown(html);
+        assert!(result.contains("> Quote **bold** text"));
+    }
+
+    #[test]
+    fn test_list_with_links() {
+        let html = r##"<html><body><ul><li><a href="/one">First</a></li><li><a href="/two">Second</a></li></ul></body></html>"##;
+        let result = html_to_markdown(html);
+        assert!(result.contains("- [First](/one)"));
+        assert!(result.contains("- [Second](/two)"));
+    }
+
+    #[test]
+    fn test_text_spacing_preserved() {
+        let html = "<html><body><p>Hello <strong>world</strong> again</p></body></html>";
+        let result = html_to_markdown(html);
+        assert!(result.contains("Hello **world** again"));
+    }
+
+    #[test]
+    fn test_skip_javascript_link() {
+        let html = r##"<html><body><a href="javascript:void(0)">Click</a></body></html>"##;
+        let result = html_to_markdown(html);
+        assert!(result.contains("Click"));
+        assert!(!result.contains("javascript"));
+    }
+
+    #[test]
+    fn test_empty_elements_skipped() {
+        let html = "<html><body><div><i></i></div><p>Content</p></body></html>";
+        let result = html_to_markdown(html);
+        assert_eq!(result, "Content");
+    }
+
+    #[test]
+    fn test_pre_code_block() {
+        let html = "<html><body><pre><code>fn main() {\n    println!(\"hello\");\n}</code></pre></body></html>";
+        let result = html_to_markdown(html);
+        assert!(result.contains("```"));
+        assert!(result.contains("fn main()"));
+    }
+
+    #[test]
+    fn test_headings_are_correct_level() {
+        let html = "<html><body><h1>Title</h1><h2>Section</h2></body></html>";
+        let result = html_to_markdown(html);
+        assert!(result.contains("# Title"));
+        assert!(result.contains("## Section"));
     }
 }

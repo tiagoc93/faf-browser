@@ -7,23 +7,11 @@ pub fn extract_structured_data(html: &str) -> Value {
     let open_graph = extract_open_graph(&document);
     let meta = extract_meta_tags(&document);
 
-    let mut result = json!({});
-
-    if !json_ld.is_empty() {
-        result["json_ld"] = json!(json_ld);
-    }
-    if !og_is_empty(&open_graph) {
-        result["open_graph"] = json!(open_graph);
-    }
-    if !og_is_empty(&meta) {
-        result["meta"] = json!(meta);
-    }
-
-    result
-}
-
-fn og_is_empty(v: &Value) -> bool {
-    v.as_object().map(|o| o.is_empty()).unwrap_or(true)
+    json!({
+        "json_ld": json_ld,
+        "open_graph": open_graph,
+        "meta": meta,
+    })
 }
 
 fn extract_json_ld(document: &scraper::Html) -> Vec<Value> {
@@ -161,6 +149,9 @@ mod tests {
         let html = "<html><head></head><body><p>No metadata</p></body></html>";
         let result = extract_structured_data(html);
         assert!(result.is_object());
+        assert_eq!(result["json_ld"], json!([]));
+        assert_eq!(result["open_graph"], json!({}));
+        assert_eq!(result["meta"], json!({}));
     }
 
     #[test]
@@ -168,6 +159,6 @@ mod tests {
         let html = r#"<html><head><script type="application/ld+json">{invalid json}</script></head></html>"#;
         let result = extract_structured_data(html);
         assert!(result.is_object());
-        assert!(!result.as_object().unwrap().contains_key("json_ld"));
+        assert_eq!(result["json_ld"], json!([]));
     }
 }
