@@ -5,6 +5,18 @@ edition = "2024"
 description = "FAF BROWSER — Fast As Fuck. Navegador headless 100% Rust, minimalista e agressivamente rápido."
 authors = ["Tiago Coelho"]
 
+[lib]
+name = "faf_browser"
+path = "src/lib.rs"
+
+[[bin]]
+name = "faf-browser"
+path = "src/main.rs"
+
+[[bin]]
+name = "faf"
+path = "src/bin/faf.rs"
+
 [dependencies]
 # HTTP
 reqwest = { version = "0.12", default-features = false, features = ["json", "socks", "cookies", "blocking", "rustls-tls"] }
