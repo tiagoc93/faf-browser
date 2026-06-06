@@ -1,6 +1,6 @@
 # 🎯 Tasks — FAF BROWSER (Fast As Fuck)
 
-**Status:** M8 concluído | **Tests:** 329 | **Stack:** Rust + Cargo (Edition 2024)
+**Status:** M8 concluído | **Tests:** 332 | **Stack:** Rust + Cargo (Edition 2024)
 
 ---
 

@@ -27,8 +27,14 @@ pub struct Declaration {
 /// reconstructed exactly as written.
 pub fn parse_css(css_text: &str) -> Result<Stylesheet> {
     let mut rules = Vec::new();
-    let mut media_css = String::new(); // M8.5: collect inner CSS from @media rules
+    let mut media_css = String::new();
     let chars: Vec<char> = css_text.chars().collect();
+    let byte_pos: Vec<usize> = css_text.char_indices().map(|(b, _)| b).chain(std::iter::once(css_text.len())).collect();
+    let slice = |s: usize, e: usize| -> &str {
+        let bs = byte_pos[s.min(byte_pos.len().saturating_sub(1))];
+        let be = byte_pos[e.min(byte_pos.len().saturating_sub(1))];
+        &css_text[bs..be]
+    };
     let mut i = 0;
 
     while i < chars.len() {
@@ -52,7 +58,7 @@ pub fn parse_css(css_text: &str) -> Result<Stylesheet> {
 
         // M8.5: Process @media rules instead of skipping them
         if chars[i] == '@' {
-            let result = extract_media_rules(&chars, i, css_text)?;
+            let result = extract_media_rules(&chars, &byte_pos, i, css_text)?;
             i = result.0;
             if let Some(inner_css) = result.1 {
                 // Append inner CSS to be parsed with the rest
@@ -91,7 +97,7 @@ pub fn parse_css(css_text: &str) -> Result<Stylesheet> {
         if i >= chars.len() {
             break; // No opening brace found
         }
-        let selectors = css_text[selector_start..i].trim().to_string();
+        let selectors = slice(selector_start, i).trim().to_string();
         i += 1; // skip '{'
 
         // Read declarations until matching '}'
@@ -131,7 +137,7 @@ pub fn parse_css(css_text: &str) -> Result<Stylesheet> {
                 i += 1;
             }
         }
-        let decl_text = css_text[decl_start..i].trim();
+        let decl_text = slice(decl_start, i).trim();
         i += 1; // skip '}'
 
         let declarations = parse_declarations(decl_text)?;
@@ -153,16 +159,14 @@ pub fn parse_css(css_text: &str) -> Result<Stylesheet> {
 /// M8.5: Extract inner CSS from @media rules that match our viewport.
 /// Returns (new_index, optional_inner_css).
 /// For now, extracts all @media screen rules (assumes desktop viewport >= 768px).
-fn extract_media_rules(chars: &[char], mut i: usize, css_text: &str) -> Result<(usize, Option<String>)> {
+fn extract_media_rules(chars: &[char], byte_pos: &[usize], mut i: usize, css_text: &str) -> Result<(usize, Option<String>)> {
     let start = i;
-    // Skip "@media" token
     while i < chars.len() && chars[i] != '{' && chars[i] != ';' {
         i += 1;
     }
-    let at_rule = css_text[start..i].trim().to_string();
+    let at_rule = css_text[byte_pos[start.min(byte_pos.len().saturating_sub(1))]..byte_pos[i.min(byte_pos.len().saturating_sub(1))]].trim().to_string();
     
     if i < chars.len() && chars[i] == '{' {
-        // Find matching closing brace
         let mut depth = 1;
         let body_start = i + 1;
         i += 1;
@@ -174,16 +178,17 @@ fn extract_media_rules(chars: &[char], mut i: usize, css_text: &str) -> Result<(
             }
             i += 1;
         }
-        let body_end = i - 1; // position of closing '}'
+        let body_end = i - 1;
         
-        // Extract rules: only @media (screen), skip @keyframes, @font-face, @import
         let at_lower = at_rule.to_lowercase();
         if !at_lower.starts_with("@media") {
-            return Ok((i, None)); // skip non-media at-rules
+            return Ok((i, None));
         }
         let is_print = at_rule.contains("print");
         if !is_print {
-            let inner = css_text[body_start..body_end].to_string();
+            let bs = byte_pos[body_start.min(byte_pos.len().saturating_sub(1))];
+            let be = byte_pos[body_end.min(byte_pos.len().saturating_sub(1))];
+            let inner = css_text[bs..be].to_string();
             return Ok((i, Some(inner)));
         }
         return Ok((i, None));
@@ -288,7 +293,28 @@ pub async fn extract_page_stylesheets(
                         let css_text = resp.body;
                         if !css_text.trim().is_empty() {
                             css_sources.push(css_text);
-                        }
+    #[test]
+    fn test_multibyte_char_in_selector() {
+        let css = "héllo { color: red; }";
+        let sheet = parse_css(css).unwrap();
+        assert_eq!(sheet.rules.len(), 1);
+        assert_eq!(sheet.rules[0].selectors, "héllo");
+    }
+
+    #[test]
+    fn test_multibyte_char_in_value() {
+        let css = "p { content: \"coração\"; }";
+        let sheet = parse_css(css).unwrap();
+        assert_eq!(sheet.rules[0].declarations[0].value, "\"coração\"");
+    }
+
+    #[test]
+    fn test_multibyte_in_media() {
+        let css = "@media screen { .clássé { color: red; } }";
+        let sheet = parse_css(css).unwrap();
+        assert!(sheet.rules.iter().any(|r| r.selectors.contains("clássé")));
+    }
+}
                     }
                     Err(err) => {
                         log::warn!("Falha ao baixar CSS '{}': {}", resolved_url, err);
@@ -456,5 +482,27 @@ mod tests {
         let sheet = parse_css(css).unwrap();
         assert_eq!(sheet.rules[0].declarations.len(), 1);
         assert_eq!(sheet.rules[0].declarations[0].value, "red");
+    }
+
+    #[test]
+    fn test_multibyte_char_in_selector() {
+        let css = "héllo { color: red; }";
+        let sheet = parse_css(css).unwrap();
+        assert_eq!(sheet.rules.len(), 1);
+        assert_eq!(sheet.rules[0].selectors, "héllo");
+    }
+
+    #[test]
+    fn test_multibyte_char_in_value() {
+        let css = r#"p { content: "coração"; }"#;
+        let sheet = parse_css(css).unwrap();
+        assert_eq!(sheet.rules[0].declarations[0].value, "\"coração\"");
+    }
+
+    #[test]
+    fn test_multibyte_in_media() {
+        let css = "@media screen { .clássé { color: red; } }";
+        let sheet = parse_css(css).unwrap();
+        assert!(sheet.rules.iter().any(|r| r.selectors.contains("clássé")));
     }
 }

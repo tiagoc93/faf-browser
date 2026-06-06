@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://github.com/tiagoc93/faf-browser/actions"><img src="https://img.shields.io/badge/status-active-2ea043?style=flat-square" alt="Status"></a>
   <a href="#"><img src="https://img.shields.io/badge/Rust-Edition%202024-orange?style=flat-square&logo=rust" alt="Rust 2024"></a>
-  <a href="#"><img src="https://img.shields.io/badge/tests-329%20passed-green?style=flat-square" alt="Tests"></a>
+  <a href="#"><img src="https://img.shields.io/badge/tests-332%20passed-green?style=flat-square" alt="Tests"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT"></a>
   <a href="#"><img src="https://img.shields.io/badge/binary-~2MB-lightgrey?style=flat-square" alt="Binary"></a>
 </p>
@@ -49,26 +49,101 @@ Requires **Rust** (edition 2024) via [rustup](https://rustup.rs/). Linux x86_64.
 
 ## Usage
 
-### Dump a self-contained HTML
+### `faf <url>` — Fetch a page
 
 ```bash
+faf https://books.toscrape.com/
+```
+
+```
+📄 Página: https://books.toscrape.com/
+📌 Título: All products | Books to Scrape - Sandbox
+🔗 Links: 94  🖼️ Imagens: 20  📋 Metadados: 4
+📝 Texto: Books to Scrape We love being scraped! ...
+```
+
+### `faf query` — CSS selectors with computed styles
+
+```bash
+faf https://books.toscrape.com/ query "h1"
+faf https://site.com query "a" --json
+faf https://site.com query "a" --get "text,href"
+```
+
+```
+🔍 Query 'h1': 1 resultado(s)
+  [1.] <h1> text: All products
+      🎨 color: inherit | bg: transparent | font-size: 29.96px | display: block
+```
+
+`--get` fields: `tag`, `id`, `classes`, `text`, `html`, `href`, `src`, `alt`, `color`, `bg`, `font-size`, `font-family`, `display`.
+
+### `faf query --filter` — Filter results
+
+```bash
+faf https://books.toscrape.com/ query "a" --filter "text~=Python"
+faf https://site.com query "a" --filter "href^=https" --filter "text!=."
+faf https://site.com query "img" --filter "alt=.+"
+```
+
+Operators: `~=` (contains), `!~=` (not contains), `==` (exact), `!=` (not exact), `^=` (starts with), `!^=`, `$=` (ends with), `!$=`, `=` (regex).
+
+### `faf dump` — Self-contained HTML archive
+
+Core command. Downloads a page and produces a single-file output you can open anywhere.
+
+```bash
+# Basic dump: CSS inlined, URLs absolute, HTML preserved
 faf dump --url https://books.toscrape.com/ --output page.html
-faf dump --url https://site.com --output page.html --inline-images --no-scripts
-faf dump --url https://site.com --format markdown | head -20     # pipe to stdout
+
+# Pipe to stdout (no --output = goes to stdout)
+faf dump --url https://site.com --format markdown | head -50
 ```
 
-The output is a **single HTML file** you can open in any browser. External CSS is inlined. URLs are resolved to absolute. Scripts and event handlers are removed with `--no-scripts`. Images are converted to base64 data URIs with `--inline-images`.
+**Output formats (`--format`):**
 
-### Scrape data
+| Value | Output | Use case |
+|-------|--------|----------|
+| `html` | Self-contained HTML (default) | Archive, open in browser |
+| `markdown` | Clean Markdown with headings, links, lists, images | Feed to LLMs, note-taking |
+| `text` | Plain text with paragraph separation | Quick reading, grep, pipe |
+| `json` | Structured JSON with metadata | Programmatic consumption |
 
 ```bash
-faf https://books.toscrape.com/                      # full page info
-faf https://site.com query "h1" --json               # CSS query
-faf https://site.com query "a" --get "text,href"     # selective fields
-faf https://site.com query "div" --filter "class~=product" --filter "text!=."
+faf dump --url https://books.toscrape.com/ --format markdown
+faf dump --url https://site.com --format text
 ```
 
-### Crawl
+**Content extraction (`--readability`):**
+
+Strips navigation, sidebars, footers, ads. Keeps only the main content using text-density scoring. Combine with `--format markdown` for clean LLM input:
+
+```bash
+faf dump --url https://blog.com/post --format markdown --readability
+faf dump --url https://docs.rs/some-crate --format text --readability | less
+```
+
+**Structured data (`--structured-data`):**
+
+Extracts JSON-LD, Open Graph, meta tags, and microdata as a JSON file. Useful for SEO analysis, metadata extraction:
+
+```bash
+faf dump --url https://site.com --structured-data
+# → {"json_ld": [...], "open_graph": {...}, "meta": {...}}
+```
+
+**Self-contained options:**
+
+| Flag | Effect |
+|------|--------|
+| `--no-scripts` | Remove all `<script>` tags and `on*` event handlers |
+| `--inline-images` | Convert `<img src>` to base64 data URIs (fully offline) |
+| `--no-inline-css` | Keep `<link rel="stylesheet">` instead of inlining as `<style>` |
+| `--output <path>` | Save to file (omit for stdout) |
+
+### `faf follow` — Crawl
+
+Follows links matching a selector, visits each page, extracts data.
 
 ```bash
 faf https://books.toscrape.com/ follow ".product_pod h3 a" \
@@ -77,29 +152,105 @@ faf https://books.toscrape.com/ follow ".product_pod h3 a" \
 faf https://site.com follow "a" --max 5 --delay 1000 --random-delay 500 2000
 ```
 
-### JavaScript
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--extract` | – | CSS selectors to extract from each visited page |
+| `--max` | `10` | Max pages to crawl |
+| `--concurrency` | `3` | Parallel requests |
+| `--delay` | `0` | Fixed delay (ms) between requests |
+| `--random-delay` | – | Random delay range (min max in ms) |
+| `--same-domain` | `true` | Restrict to same domain |
+
+### `faf` — JavaScript engine
+
+QuickJS runtime embedded. Executes page scripts, DOM access, fetch API.
 
 ```bash
-faf https://site.com --js "document.title"
+faf https://books.toscrape.com/ --js "document.title"
+# → "All products | Books to Scrape - Sandbox"
+
+faf https://site.com --js "document.querySelectorAll('h3').length"
 faf https://site.com --js-file script.js
+faf https://site.com --js "while(true){}" --js-timeout 2
+# → "JavaScript execution timed out after 2s"
+
 echo 'document.querySelectorAll(".price").length' | faf --stdin --url https://site.com
 ```
 
-### Interaction
+The JS bridge exposes: `document.title`, `document.querySelector`, `document.querySelectorAll`, `document.getElementById`, `fetch()`, `setTimeout`, `setInterval`, `console.log/warn/error`.
+
+### `faf repl` — Interactive mode
 
 ```bash
+faf repl --url https://books.toscrape.com/
+> document.title
+"All products | Books to Scrape - Sandbox"
+> document.querySelectorAll('h3').length
+20
+> .json
+> document.querySelector("h1").text
+"\"All products\""
+> .exit
+```
+
+Commands: `.json` (toggle JSON output), `.exit`, `.help`, `.clear`. Pipe input via `--stdin`:
+
+```bash
+echo "document.title" | faf --stdin --url https://site.com
+```
+
+### `faf` — Page interaction
+
+```bash
+# Click an element
 faf click "#btn" --url https://site.com
+
+# Wait for element to appear
 faf wait ".spinner" --url https://site.com --timeout 10
+
+# Watch for changes
 faf watch ".price" --url https://site.com --interval 30 --max-checks 5
 ```
 
-### Session & network
+### `faf` — Output formats
 
 ```bash
+faf https://site.com query "a" --json                    # JSON pretty
+faf https://site.com query "a" --get "text,href" --format jsonl  # JSONL
+faf https://site.com follow "a" --max 3 --format csv      # CSV
+```
+
+### `faf` — Session & network
+
+```bash
+# Proxy
 faf https://site.com --proxy socks5://127.0.0.1:9050
-faf https://site.com --cookies session.txt --cookies-jar session.txt
+
+# Persistent cookies
+faf https://site.com/login --cookies session.txt --cookies-jar session.txt
+faf https://site.com/dashboard --cookies session.txt
+
+# HTTP caching
 faf https://site.com --cache .cache --show-headers --show-status
+
+# Retry on failure
 faf https://site.com --retries 3 --retry-delay 2000
+
+# Custom headers and timeout
+faf https://site.com --user-agent "FAF/1.0" --timeout 60
+```
+
+### `faf` — CSS manipulation
+
+```bash
+# Inject custom CSS
+faf https://site.com --css "h1 { color: red; }" query "h1"
+
+# Load CSS from file
+faf https://site.com --css custom.css query ".card"
+
+# Disable page CSS
+faf https://site.com --no-page-css query "h1"
 ```
 
 ---
