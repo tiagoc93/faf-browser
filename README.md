@@ -7,14 +7,14 @@
   <a href="#"><img src="https://img.shields.io/badge/Rust-Edition%202024-orange?style=flat-square&logo=rust" alt="Rust 2024"></a>
   <a href="#"><img src="https://img.shields.io/badge/tests-332%20passed-green?style=flat-square" alt="Tests"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT"></a>
-  <a href="#"><img src="https://img.shields.io/badge/binary-~2MB-lightgrey?style=flat-square" alt="Binary"></a>
+  <a href="#"><img src="https://img.shields.io/badge/binary-~8MB-lightgrey?style=flat-square" alt="Binary"></a>
 </p>
 
-# faf — headless browser for the terminal
+# faf — scraping and page archiving for the terminal
 
-> *A ~2MB single binary that fetches, parses, executes JS, and dumps self-contained HTML. No Electron. No Chromium. Just Rust.*
+> *A single binary that fetches, parses, executes JS, and outputs structured data. Optimized for feeding LLMs. No Electron. No Chromium. Just Rust.*
 
-**FAF** is a CLI tool for scraping, crawling, and archiving web pages. It speaks CSS selectors, runs JavaScript via QuickJS, handles cookies, retries, proxies, and outputs data as JSON, CSV, JSONL, or self-contained HTML.
+**FAF** is a high-performance CLI scraper. It speaks CSS selectors, runs JavaScript via QuickJS, handles cookies, retries, proxies, and outputs data as JSON, CSV, JSONL, Markdown, or self-contained HTML. Not a browser — a smarter curl.
 
 ---
 
@@ -37,8 +37,8 @@ Requires **Rust** (edition 2024) via [rustup](https://rustup.rs/). Linux x86_64.
 | **HTTP** | proxy (HTTP/SOCKS5), timeout, custom user-agent, retry with exponential backoff | ✅ |
 | **HTML** | full DOM tree via html5ever, CSS selectors (`h1`, `.class`, `#id`, combinators) | ✅ |
 | **CSS** | parser, cascade, specificity, computed styles, inline + external stylesheets | ✅ |
-| **JavaScript** | QuickJS runtime, DOM bridge, `fetch()`, `setTimeout`, `<script>` execution | ✅ |
-| **Dump** | self-contained HTML, Markdown, text output, readability extraction, structured data | ✅ |
+| **JavaScript** | QuickJS (ES2020) runtime, DOM bridge (querySelector, fetch, timers), page scripts | ✅ |
+| **Dump** | self-contained HTML, Markdown, text output, readability, structured data extraction | ✅ |
 | **Crawl** | `follow` links with concurrency, rate-limiting, filters, and selective extraction | ✅ |
 | **Output** | JSON, JSONL, CSV, plain text — pipe-friendly | ✅ |
 | **Session** | persistent cookies (Netscape format), response caching (SHA256 + TTL) | ✅ |
@@ -163,7 +163,7 @@ faf https://site.com follow "a" --max 5 --delay 1000 --random-delay 500 2000
 
 ### `faf` — JavaScript engine
 
-QuickJS runtime embedded. Executes page scripts, DOM access, fetch API.
+QuickJS (ES2020) embedded runtime. Executes page scripts with DOM bridge and fetch API. Limited compared to V8 — no ES2021+, no `await` at top level, no `localStorage`, no `MutationObserver`.
 
 ```bash
 faf https://books.toscrape.com/ --js "document.title"
@@ -178,6 +178,39 @@ echo 'document.querySelectorAll(".price").length' | faf --stdin --url https://si
 ```
 
 The JS bridge exposes: `document.title`, `document.querySelector`, `document.querySelectorAll`, `document.getElementById`, `fetch()`, `setTimeout`, `setInterval`, `console.log/warn/error`.
+
+#### JavaScript API reference
+
+FAF runs QuickJS (ES2020), not V8. The following DOM APIs are polyfilled:
+
+| API | Support | Notes |
+|-----|:-------:|-------|
+| `document.title` | ✅ | Read/write |
+| `document.querySelector(sel)` | ✅ | CSS selectors via scraper |
+| `document.querySelectorAll(sel)` | ✅ | Returns Array-like |
+| `document.getElementById(id)` | ✅ | |
+| `element.value` | ✅ | Read/write on `<input>`, `<select>`, `<textarea>` |
+| `element.checked` | ✅ | Read/write on checkbox/radio |
+| `element.click()` | ✅ | Via `dispatchEvent(MouseEvent)` |
+| `element.text` / `element.textContent` | ✅ | |
+| `element.attributes` | ✅ | Key-value map |
+| `element.innerHTML` | ✅ | Read-only |
+| `fetch(url)` | ✅ | Calls reqwest internally (real HTTP) |
+| `setTimeout(fn, ms)` | ✅ | Tokio-backed event loop |
+| `setInterval(fn, ms)` | ✅ | Tokio-backed event loop |
+| `clearTimeout / clearInterval` | ✅ | |
+| `console.log / warn / error` | ✅ | Routed to Rust logger |
+| `window.scrollTo / scrollBy` | ✅ | Simulated position |
+| `element.scrollIntoView()` | ✅ | Simulated |
+| `window.pageYOffset` | ✅ | |
+| `new URLSearchParams()` | ✅ | Polyfill |
+| `localStorage` | ❌ | No persistent storage |
+| `MutationObserver` | ❌ | No live DOM observation |
+| `IntersectionObserver` | ❌ | No viewport tracking |
+| `WebSocket` | ❌ | |
+| `addEventListener` | ❌ | Events fired via dispatchEvent only |
+| `XMLHttpRequest` | ❌ | Use `fetch()` instead |
+| `canvas` / `WebGL` | ❌ | |
 
 ### `faf repl` — Interactive mode
 
@@ -257,21 +290,37 @@ faf https://site.com --no-page-css query "h1"
 
 ## Comparison
 
-| | BeautifulSoup | Playwright | **FAF** |
-|---|---:|---:|---:|
-| Language | Python | Node.js | **Rust** |
-| Single binary | ❌ | ❌ | **✅** |
-| CSS selectors | ✅ | ✅ | ✅ |
-| Computed styles | ❌ | ✅ | ✅ |
-| JavaScript | ❌ | ✅ (V8) | ✅ (QuickJS) |
-| Built-in crawler | ❌ | ❌ | ✅ |
-| HTML dump (self-contained) | ❌ | ❌ | ✅ |
-| JSONL/CSV native | ❌ | ❌ | ✅ |
-| RAM (avg page) | ~50MB | ~150MB | **~5MB** |
-| First query | ~2s | ~3s | **~0.3s** |
-| Cookies / Cache / Retry | ❌ | ❌ | ✅ |
+FAF is **not** a browser automation tool. It does not run Chromium, handle SPAs, or bypass anti-bot detection. It is a **high-performance scraper** with JS execution.
 
-FAF is **not** a browser automation tool. It won't render SPAs pixel-perfect or drive a real browser. It is a **high-performance scraping and page-archiving CLI** that beats curl+pup+jq in convenience and speed.
+| | curl + pup + jq | BeautifulSoup | Playwright | **FAF** |
+|---|---:|---:|---:|---:|
+| Language | shell | Python | Node.js | **Rust** |
+| Single binary | ❌ | ❌ | ❌ | **✅** |
+| CSS selectors | ❌ | ✅ | ✅ | ✅ |
+| JavaScript | ❌ | ❌ | ✅ (V8) | ✅ (QuickJS) |
+| Self-contained dump | ❌ | ❌ | ❌ | ✅ |
+| Markdown / readability | ❌ | ❌ | ❌ | ✅ |
+| Built-in crawler | ❌ | ❌ | ❌ | ✅ |
+| JSONL/CSV native | ❌ | ❌ | ❌ | ✅ |
+| Cookies / Cache / Retry | ❌ | ❌ | ❌ | ✅ |
+| SPA rendering | ❌ | ❌ | ✅ | ❌ |
+| Anti-bot bypass | ❌ | ❌ | ✅ | ❌ |
+| RAM (avg page) | ~5MB | ~50MB | ~150MB | **~5MB** |
+| First query | ~0.1s | ~2s | ~3s | **~0.3s** |
+
+### When to use FAF vs Playwright
+
+| Scenario | Tool |
+|----------|------|
+| Simple scraping (HTTP GET → parse) | **FAF** |
+| Feed page content to LLMs (markdown, readability) | **FAF** |
+| Crawl with rate-limiting, concurrency | **FAF** |
+| Run on low-resource VPS (5MB RAM) | **FAF** |
+| Archive pages as self-contained HTML | **FAF** |
+| Execute JS-dependent SPAs (React, Vue) | **Playwright** |
+| Bypass anti-bot detection | **Playwright** |
+| Pixel-perfect screenshots | **Playwright** |
+| Automate login flows, form fills via real browser | **Playwright** |
 
 ---
 
