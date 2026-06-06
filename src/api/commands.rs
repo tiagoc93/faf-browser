@@ -205,6 +205,18 @@ pub struct DumpArgs {
     /// Remover scripts da página
     #[arg(long = "no-scripts")]
     pub no_scripts: bool,
+
+    /// Formato de saída: html, markdown, text, json
+    #[arg(long = "format", default_value = "html")]
+    pub format: String,
+
+    /// Extrair apenas o conteúdo principal (remove nav, footer, sidebar)
+    #[arg(long = "readability")]
+    pub readability: bool,
+
+    /// Extrair dados estruturados (JSON-LD, Open Graph, meta tags)
+    #[arg(long = "structured-data")]
+    pub structured_data: bool,
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -858,6 +870,9 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 inline_css: !args.no_inline_css,
                 remove_scripts: args.no_scripts,
                 base_url: url.clone(),
+                format: args.format.clone(),
+                readability: args.readability,
+                structured_data: args.structured_data,
             };
 
             crate::dump::dump_to_file(&html, &config, &args.output)?;

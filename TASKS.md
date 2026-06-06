@@ -1,6 +1,6 @@
 # 🎯 Tasks — FAF BROWSER (Fast As Fuck)
 
-**Status:** M6 concluído · M7 pendente | **Tests:** 273 | **Stack:** Rust + Cargo (Edition 2024)
+**Status:** M7 concluído | **Tests:** 309 | **Stack:** Rust + Cargo (Edition 2024)
 
 ---
 
@@ -230,15 +230,15 @@ Testes de integração: 4 (dump basic, relative URLs, no-scripts, existing style
 
 ---
 
-## 📋 M7 — LLM-Ready Output (A IMPLEMENTAR)
+## ✅ M7 — LLM-Ready Output (5 tasks · Concluído)
 
-**Objetivo:** Tornar o FAF a ferramenta ideal para alimentar LLMs com conteúdo web. Adicionar formatos de saída otimizados para AI: Markdown limpo, extração de conteúdo principal (readability), extração de dados estruturados (schema.org/JSON-LD), e texto puro preservando parágrafos.
+**Objetivo:** Tornar o FAF a ferramenta ideal para alimentar LLMs com conteúdo web.
 
-**Por que isso importa:**
-- LLMs processam Markdown muito melhor que HTML (menos tokens, mais semântica)
-- Remover ruído (nav, footer, sidebar, ads) reduz custo de token e melhora qualidade
-- Dados estruturados (JSON-LD, schema.org) permitem extração semântica precisa
-- Posiciona o FAF como ferramenta de scraping para AI pipelines
+**Resultado:** 4 novos formatos de saída integrados ao comando `dump`:
+- `--format markdown` — HTML → Markdown (headings, links, listas, imagens, code blocks)
+- `--format text` — texto limpo preservando parágrafos e headings
+- `--readability` — extração de conteúdo principal (text-density scoring)
+- `--structured-data` — extração de JSON-LD, Open Graph, meta tags
 
 ---
 
@@ -795,8 +795,8 @@ cargo clippy                  # limpo
 | M4.5 — Refinamentos Pós-M4 | 3 | ✅ Concluído |
 | M5 — Interação com Páginas | 5 | ✅ Concluído |
 | M6 — Dump HTML Autocontido | 8 | ✅ Concluído |
-| **M7 — LLM-Ready Output** | **5** | **⬜ A IMPLEMENTAR** |
-| **Total** | **67** | **62 concluídas · 5 pendentes** |
+| **M7 — LLM-Ready Output** | **5** | **✅ Concluído** |
+| **Total** | **67** | **67 concluídas · 0 pendentes** |
 
 ---
 

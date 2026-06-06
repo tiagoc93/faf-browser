@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://github.com/tiagoc93/faf-browser/actions"><img src="https://img.shields.io/badge/status-active-2ea043?style=flat-square" alt="Status"></a>
   <a href="#"><img src="https://img.shields.io/badge/Rust-Edition%202024-orange?style=flat-square&logo=rust" alt="Rust 2024"></a>
-  <a href="#"><img src="https://img.shields.io/badge/tests-273%20passed-green?style=flat-square" alt="Tests"></a>
+  <a href="#"><img src="https://img.shields.io/badge/tests-309%20passed-green?style=flat-square" alt="Tests"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT"></a>
   <a href="#"><img src="https://img.shields.io/badge/binary-~2MB-lightgrey?style=flat-square" alt="Binary"></a>
 </p>
@@ -38,7 +38,7 @@ Requires **Rust** (edition 2024) via [rustup](https://rustup.rs/). Linux x86_64.
 | **HTML** | full DOM tree via html5ever, CSS selectors (`h1`, `.class`, `#id`, combinators) | ✅ |
 | **CSS** | parser, cascade, specificity, computed styles, inline + external stylesheets | ✅ |
 | **JavaScript** | QuickJS runtime, DOM bridge, `fetch()`, `setTimeout`, `<script>` execution | ✅ |
-| **Dump** | self-contained HTML with inlined CSS, base64 images, resolved URLs, optional script removal | ✅ |
+| **Dump** | self-contained HTML, Markdown, text output, readability extraction, structured data | ✅ |
 | **Crawl** | `follow` links with concurrency, rate-limiting, filters, and selective extraction | ✅ |
 | **Output** | JSON, JSONL, CSV, plain text — pipe-friendly | ✅ |
 | **Session** | persistent cookies (Netscape format), response caching (SHA256 + TTL) | ✅ |
@@ -172,15 +172,19 @@ CSS inlining, image-to-base64, URL resolution, script removal
 
 ---
 
-### ⬜ M7 — LLM-Ready Output (coming next)
+### ✅ M7 — LLM-Ready Output (done)
 
 | Task | Description |
 |---|---|
-| **T090** | `dump --format markdown` — convert HTML to clean Markdown for LLM consumption |
+| **T090** | `dump --format markdown` — convert HTML to clean Markdown |
 | **T091** | `dump --readability` — extract main content, strip navigation/ads/footers |
 | **T092** | Structured data extraction — JSON-LD, microdata, schema.org, Open Graph |
-| **T093** | `dump --text` — clean visible text extraction, paragraph-preserving |
-| **T094** | Tests M7 — unit + integration tests for all new output formats |
+| **T093** | `dump --format text` — clean visible text extraction, paragraph-preserving |
+| **T094** | Tests — 12 integration tests + 24 unit tests |
+
+```
+📦 5 tasks · ✅ 5 concluídas · 309 testes · 0 falhas
+```
 
 ---
 

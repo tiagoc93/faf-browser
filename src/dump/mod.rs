@@ -1,5 +1,9 @@
 pub mod css_inline;
 pub mod image_inline;
+pub mod markdown;
+pub mod readability;
+pub mod structured_data;
+pub mod text;
 pub mod url_resolver;
 
 use std::fs;
@@ -8,6 +12,10 @@ use std::path::Path;
 
 use crate::dump::css_inline::inline_css;
 use crate::dump::image_inline::inline_images;
+use crate::dump::markdown::html_to_markdown;
+use crate::dump::readability::extract_main_content;
+use crate::dump::structured_data::extract_structured_data;
+use crate::dump::text::html_to_text;
 use crate::dump::url_resolver::resolve_url;
 
 pub struct DumpConfig {
@@ -15,10 +23,43 @@ pub struct DumpConfig {
     pub inline_css: bool,
     pub remove_scripts: bool,
     pub base_url: String,
+    pub format: String,
+    pub readability: bool,
+    pub structured_data: bool,
+}
+
+impl Default for DumpConfig {
+    fn default() -> Self {
+        Self {
+            inline_images: false,
+            inline_css: true,
+            remove_scripts: false,
+            base_url: String::new(),
+            format: "html".to_string(),
+            readability: false,
+            structured_data: false,
+        }
+    }
 }
 
 pub fn dump_to_file(html: &str, config: &DumpConfig, output_path: &str) -> anyhow::Result<()> {
     let mut result = html.to_string();
+
+    if config.structured_data {
+        log::info!("Extraindo dados estruturados...");
+        let data = extract_structured_data(&result);
+        let json_str = serde_json::to_string_pretty(&data)?;
+
+        let path = Path::new(output_path);
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                fs::create_dir_all(parent)?;
+            }
+        }
+        fs::write(path, json_str.as_bytes())?;
+        log::info!("Dados estruturados salvos em {} ({} bytes)", output_path, json_str.len());
+        return Ok(());
+    }
 
     if config.remove_scripts {
         log::info!("Removendo scripts...");
@@ -35,8 +76,27 @@ pub fn dump_to_file(html: &str, config: &DumpConfig, output_path: &str) -> anyho
         result = inline_images(&result, &config.base_url);
     }
 
-    log::info!("Resolvendo URLs relativas...");
-    result = resolve_urls_in_html(&result, &config.base_url);
+    if !config.structured_data {
+        log::info!("Resolvendo URLs relativas...");
+        result = resolve_urls_in_html(&result, &config.base_url);
+    }
+
+    if config.readability {
+        log::info!("Extraindo conteúdo principal (readability)...");
+        result = extract_main_content(&result);
+    }
+
+    match config.format.as_str() {
+        "markdown" | "md" => {
+            log::info!("Convertendo para Markdown...");
+            result = html_to_markdown(&result);
+        }
+        "text" | "txt" => {
+            log::info!("Extraindo texto puro...");
+            result = html_to_text(&result);
+        }
+        _ => {}
+    }
 
     let path = Path::new(output_path);
     if let Some(parent) = path.parent() {
@@ -138,7 +198,8 @@ mod tests {
 
     #[test]
     fn test_remove_scripts_removes_onclick() {
-        let html = r##"<html><body><button onclick="doSomething()">Click</button></body></html>"##;
+        let html =
+            r##"<html><body><button onclick="doSomething()">Click</button></body></html>"##;
         let result = remove_scripts(html);
         assert!(!result.contains("onclick"));
         assert!(result.contains("<button"));
@@ -181,12 +242,58 @@ mod tests {
             inline_css: false,
             remove_scripts: false,
             base_url: "https://example.com".to_string(),
+            ..Default::default()
         };
         let path = "/tmp/faf_test_dump_basic.html";
         dump_to_file(html, &config, path).unwrap();
         let saved = std::fs::read_to_string(path).unwrap();
         assert!(saved.contains("https://example.com/about"));
         assert!(saved.contains("https://example.com/img/logo.png"));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_dump_text_format() {
+        let html = r##"<html><body><h1>Title</h1><p>Body text here.</p></body></html>"##;
+        let config = DumpConfig {
+            format: "text".to_string(),
+            ..Default::default()
+        };
+        let path = "/tmp/faf_test_dump_text.txt";
+        dump_to_file(html, &config, path).unwrap();
+        let saved = std::fs::read_to_string(path).unwrap();
+        assert!(saved.contains("Title"));
+        assert!(saved.contains("Body text here"));
+        assert!(!saved.contains("<h1>"));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_dump_markdown_format() {
+        let html = r##"<html><body><h1>Title</h1><p>Body text here.</p></body></html>"##;
+        let config = DumpConfig {
+            format: "markdown".to_string(),
+            ..Default::default()
+        };
+        let path = "/tmp/faf_test_dump_md.md";
+        dump_to_file(html, &config, path).unwrap();
+        let saved = std::fs::read_to_string(path).unwrap();
+        assert!(saved.contains("# Title"));
+        assert!(saved.contains("Body text here"));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_dump_structured_data() {
+        let html = r##"<html><head><meta property="og:title" content="Test OG"></head><body></body></html>"##;
+        let config = DumpConfig {
+            structured_data: true,
+            ..Default::default()
+        };
+        let path = "/tmp/faf_test_dump_sd.json";
+        dump_to_file(html, &config, path).unwrap();
+        let saved = std::fs::read_to_string(path).unwrap();
+        assert!(saved.contains("Test OG"));
         let _ = std::fs::remove_file(path);
     }
 }
