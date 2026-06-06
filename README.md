@@ -445,27 +445,8 @@ Expose FAF as an MCP (Model Context Protocol) server. Claude Desktop, Cursor, an
 ### 🌐 Daemon Mode + Local REST API
 Run `faf serve` as a background daemon exposing REST endpoints (`POST /fetch`, `POST /crawl`, `GET /dump`). Any language — Python, TypeScript, Go — consumes FAF without needing Rust bindings. Turns FAF from a CLI into local infrastructure: a scraping server your scripts and apps can talk to.
 
-### 📄 Declarative Pipeline (YAML/TOML)
-Define scraping workflows as config files:
-```yaml
-crawl:
-  url: https://news.site/
-  follow: "a.topic"
-  max: 50
-extract:
-  - selector: "h2"
-    get: text
-  - selector: ".timestamp"
-    get: text
-filter:
-  - field: text
-    operator: contains
-    value: "AI"
-output:
-  format: jsonl
-  file: results.jsonl
-```
-Git-versionable, reproducible, shareable. Like Scrapy but in Rust and without the framework overhead.
+### 📦 Cross-Platform Binaries via CI
+GitHub Actions matrix build: Linux x86_64 + ARM64, macOS Intel + Apple Silicon, Windows. Published to Homebrew tap and Winget. Without cross-platform binaries, FAF stays a Linux-only tool. With them, it becomes a general-purpose utility the community can install in one command on any OS.
 
 ---
 
