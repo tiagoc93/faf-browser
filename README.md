@@ -30,6 +30,36 @@ Requires **Rust** (edition 2024) via [rustup](https://rustup.rs/). Linux x86_64.
 
 ---
 
+## Using the CLI
+
+After installation, the binary is **`faf-browser`** (not just `faf`). Call it directly:
+
+```bash
+faf-browser --help
+faf-browser https://books.toscrape.com/
+```
+
+If you get `command not found`, add Cargo's bin directory to your `PATH`:
+
+```bash
+# Add this to your ~/.bashrc or ~/.zshrc
+export PATH="$HOME/.cargo/bin:$PATH"
+
+# Then reload
+source ~/.bashrc   # or: exec bash
+```
+
+Verify it works:
+
+```bash
+which faf-browser   # → /home/USER/.cargo/bin/faf-browser
+faf-browser --version
+```
+
+If you built manually with `cargo build --release`, the binary is at `target/release/faf-browser` — use the full path or add `target/release` to PATH.
+
+---
+
 ## Features
 
 | | | |
