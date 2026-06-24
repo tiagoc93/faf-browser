@@ -5,16 +5,71 @@
 <p align="center">
   <a href="https://github.com/tiagoc93/faf-browser/actions"><img src="https://img.shields.io/badge/status-active-2ea043?style=flat-square" alt="Status"></a>
   <a href="#"><img src="https://img.shields.io/badge/Rust-Edition%202024-orange?style=flat-square&logo=rust" alt="Rust 2024"></a>
-  <a href="#"><img src="https://img.shields.io/badge/tests-332%20passed-green?style=flat-square" alt="Tests"></a>
+  <a href="#"><img src="https://img.shields.io/badge/tests-329%20passed-green?style=flat-square" alt="Tests"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT"></a>
   <a href="#"><img src="https://img.shields.io/badge/binary-~8MB-lightgrey?style=flat-square" alt="Binary"></a>
 </p>
 
-# faf — scraping and page archiving for the terminal
+---
 
-> *A single binary that fetches, parses, executes JS, and outputs structured data. Optimized for feeding LLMs. No Electron. No Chromium. Just Rust.*
+# faf — the scraper that talks to machines
 
-**FAF** is a high-performance CLI scraper. It speaks CSS selectors, runs JavaScript via QuickJS, handles cookies, retries, proxies, and outputs data as JSON, CSV, JSONL, Markdown, or self-contained HTML. Not a browser — a smarter curl.
+> *Fetch, parse, execute JavaScript, and output structured data. One binary. Zero Chromium. Pure Rust.*
+
+**FAF** is not a browser. It's a **headless web processor** — a single 8MB binary that does what `curl + pup + jq + pandoc + puppeteer` do together, except it runs in 5MB of RAM and finishes before Playwright even boots.
+
+It speaks CSS selectors, runs real JavaScript via QuickJS, handles cookies/caching/retries/proxies, and outputs **JSON, CSV, JSONL, Markdown, text, or self-contained HTML**. Built for pipelines, agents, and LLMs — not for screenshots.
+
+---
+
+## Why FAF
+
+### The problem
+
+Modern scraping stacks are heavy and fragmented:
+
+- **Playwright/Puppeteer** spin up a full Chromium (~150MB RAM, ~3s startup) to render one page
+- **BeautifulSoup** is pure Python — slow, no JS, no built-in output formats
+- **curl + pup + jq** is a shell glue nightmare — different tools, different syntaxes, no session state
+- **None of them** output Markdown or do readability extraction natively
+
+You end up with 4 tools, 3 languages, and 200MB of RAM to scrape one table.
+
+### The FAF way
+
+| | Playwright | BeautifulSoup | curl + pup + jq | **FAF** |
+|---|:---:|:---:|:---:|:---:|
+| Binary | 150MB+ (Chromium) | Python runtime | 3 separate bins | **8MB** |
+| RAM per page | ~150MB | ~50MB | ~5MB | **~5MB** |
+| First query | ~3s | ~2s | ~0.1s | **~0.3s** |
+| CSS selectors | ✅ | ✅ | ❌ | ✅ |
+| JavaScript | ✅ (V8) | ❌ | ❌ | ✅ (QuickJS) |
+| Markdown output | ❌ | ❌ | ❌ | **✅** |
+| Readability extraction | ❌ | ❌ | ❌ | **✅** |
+| Self-contained HTML dump | ❌ | ❌ | ❌ | **✅** |
+| Built-in crawler | ❌ | ❌ | ❌ | **✅** |
+| Cookies / Cache / Retry | ❌ | ❌ | ❌ | **✅** |
+| JSONL / CSV native | ❌ | ❌ | ❌ | **✅** |
+| SPA rendering | ✅ | ❌ | ❌ | ❌ |
+| Anti-bot bypass | ✅ | ❌ | ❌ | ❌ |
+
+**FAF trades SPA rendering and anti-bot bypass for 30× less RAM and 10× faster startup.** If you're feeding data to LLMs, building RAG pipelines, crawling APIs, or archiving content — that's the trade you want.
+
+### Built for AI pipelines
+
+```bash
+# One command → clean Markdown ready for any LLM
+faf dump --url https://blog.com/article --format markdown --readability --no-scripts
+
+# Pipe directly into your AI agent
+faf dump --url https://docs.rs/tokio --format markdown --readability | your-llm-tool
+
+# Crawl a site, extract data, output CSV — no glue code
+faf https://books.toscrape.com/ follow ".product_pod h3 a" \
+  --extract "h3,.price_color" --max 50 --format csv > products.csv
+```
+
+No BeautifulSoup soup. No Selenium weight. No Node.js dependency. Just Rust.
 
 ---
 
@@ -28,62 +83,48 @@ git clone https://github.com/tiagoc93/faf-browser.git && cd faf-browser && cargo
 
 Requires **Rust** (edition 2024) via [rustup](https://rustup.rs/). Linux x86_64.
 
----
-
-## Using the CLI
-
-After installation, **`faf`** is the primary command. **`faf-browser`** also works as an alias. Both are identical — use whichever you prefer:
-
 ```bash
-# Primary command (recommended)
-faf --help
-faf https://books.toscrape.com/
-
-# Alias — also works
-faf-browser --help
-```
-
-If you get `command not found`, add Cargo's bin directory to your `PATH`:
-
-```bash
-# Add this to your ~/.bashrc or ~/.zshrc
-export PATH="$HOME/.cargo/bin:$PATH"
-
-# Then reload
-source ~/.bashrc   # or: exec bash
-```
-
-Verify it works:
-
-```bash
+# Verify
 which faf           # → /home/USER/.cargo/bin/faf
 faf --version
 ```
 
-Both `faf` and `faf-browser` are installed together by `cargo install`.
+If `command not found`, add Cargo's bin to your PATH:
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+source ~/.bashrc
+```
 
 ---
 
 ## Features
 
-| | | |
-|---|---|---|
-| **HTTP** | proxy (HTTP/SOCKS5), timeout, custom user-agent, retry with exponential backoff | ✅ |
-| **HTML** | full DOM tree via html5ever, CSS selectors (`h1`, `.class`, `#id`, combinators) | ✅ |
-| **CSS** | parser, cascade, specificity, computed styles, inline + external stylesheets | ✅ |
-| **JavaScript** | QuickJS (ES2020) runtime, DOM bridge (querySelector, fetch, timers), page scripts | ✅ |
-| **Dump** | self-contained HTML, Markdown, text output, readability, structured data extraction | ✅ |
-| **Crawl** | `follow` links with concurrency, rate-limiting, filters, and selective extraction | ✅ |
-| **Output** | JSON, JSONL, CSV, plain text — pipe-friendly | ✅ |
-| **Session** | persistent cookies (Netscape format), response caching (SHA256 + TTL) | ✅ |
-| **Interaction** | click, form fill, watch for changes, scroll simulation | ✅ |
-| **Performance** | ~300ms first query, ~5MB RAM per page, single binary | ✅ |
+**HTTP** — proxy (HTTP/SOCKS5), timeout, custom user-agent, retry with exponential backoff
+
+**HTML** — full DOM tree via html5ever, CSS selectors (`h1`, `.class`, `#id`, combinators)
+
+**CSS** — parser, cascade, specificity, computed styles, inline + external stylesheets
+
+**JavaScript** — QuickJS (ES2020) runtime, DOM bridge (querySelector, fetch, timers), page scripts
+
+**Dump** — self-contained HTML, Markdown, text output, readability, structured data extraction
+
+**Crawl** — `follow` links with concurrency, rate-limiting, filters, and selective extraction
+
+**Output** — JSON, JSONL, CSV, plain text — pipe-friendly
+
+**Session** — persistent cookies (Netscape format), response caching (SHA256 + TTL)
+
+**Interaction** — click, form fill, watch for changes, scroll simulation
+
+**Performance** — ~300ms first query, ~5MB RAM per page, single binary
 
 ---
 
 ## Usage
 
-### `faf <url>` — Fetch a page
+### Fetch a page
 
 ```bash
 faf https://books.toscrape.com/
@@ -96,7 +137,7 @@ faf https://books.toscrape.com/
 📝 Texto: Books to Scrape We love being scraped! ...
 ```
 
-### `faf query` — CSS selectors with computed styles
+### Query with CSS selectors
 
 ```bash
 faf https://books.toscrape.com/ query "h1"
@@ -112,7 +153,7 @@ faf https://site.com query "a" --get "text,href"
 
 `--get` fields: `tag`, `id`, `classes`, `text`, `html`, `href`, `src`, `alt`, `color`, `bg`, `font-size`, `font-family`, `display`.
 
-### `faf query --filter` — Filter results
+### Filter results
 
 ```bash
 faf https://books.toscrape.com/ query "a" --filter "text~=Python"
@@ -122,44 +163,35 @@ faf https://site.com query "img" --filter "alt=.+"
 
 Operators: `~=` (contains), `!~=` (not contains), `==` (exact), `!=` (not exact), `^=` (starts with), `!^=`, `$=` (ends with), `!$=`, `=` (regex).
 
-### `faf dump` — Self-contained HTML archive
+### Dump — self-contained archiving
 
 Core command. Downloads a page and produces a single-file output you can open anywhere.
 
 ```bash
-# Basic dump: CSS inlined, URLs absolute, HTML preserved
+# Self-contained HTML archive
 faf dump --url https://books.toscrape.com/ --output page.html
 
-# Pipe to stdout (no --output = goes to stdout)
-faf dump --url https://site.com --format markdown | head -50
+# Clean Markdown for LLMs
+faf dump --url https://blog.com/post --format markdown --readability
+
+# Plain text for grep / quick reading
+faf dump --url https://docs.rs/some-crate --format text --readability | less
 ```
 
 **Output formats (`--format`):**
 
-| Value | Output | Use case |
-|-------|--------|----------|
-| `html` | Self-contained HTML (default) | Archive, open in browser |
-| `markdown` | Clean Markdown with headings, links, lists, images | Feed to LLMs, note-taking |
-| `text` | Plain text with paragraph separation | Quick reading, grep, pipe |
-| `json` | Structured JSON with metadata | Programmatic consumption |
-
-```bash
-faf dump --url https://books.toscrape.com/ --format markdown
-faf dump --url https://site.com --format text
-```
+- **`html`** — Self-contained HTML (default). Archive, open in browser.
+- **`markdown`** — Clean Markdown with headings, links, lists, images. Feed to LLMs, note-taking.
+- **`text`** — Plain text with paragraph separation. Quick reading, grep, pipe.
+- **`json`** — Structured JSON with metadata. Programmatic consumption.
 
 **Content extraction (`--readability`):**
 
-Strips navigation, sidebars, footers, ads. Keeps only the main content using text-density scoring. Combine with `--format markdown` for clean LLM input:
-
-```bash
-faf dump --url https://blog.com/post --format markdown --readability
-faf dump --url https://docs.rs/some-crate --format text --readability | less
-```
+Strips navigation, sidebars, footers, ads. Keeps only the main content using text-density scoring. Combine with `--format markdown` for clean LLM input.
 
 **Structured data (`--structured-data`):**
 
-Extracts JSON-LD, Open Graph, meta tags, and microdata as a JSON file. Useful for SEO analysis, metadata extraction:
+Extracts JSON-LD, Open Graph, meta tags, and microdata as JSON.
 
 ```bash
 faf dump --url https://site.com --structured-data
@@ -168,16 +200,12 @@ faf dump --url https://site.com --structured-data
 
 **Self-contained options:**
 
-| Flag | Effect |
-|------|--------|
-| `--no-scripts` | Remove all `<script>` tags and `on*` event handlers |
-| `--inline-images` | Convert `<img src>` to base64 data URIs (fully offline) |
-| `--no-inline-css` | Keep `<link rel="stylesheet">` instead of inlining as `<style>` |
-| `--output <path>` | Save to file (omit for stdout) |
+- `--no-scripts` — Remove all `<script>` tags and `on*` event handlers
+- `--inline-images` — Convert `<img src>` to base64 data URIs (fully offline)
+- `--no-inline-css` — Keep `<link rel="stylesheet">` instead of inlining as `<style>`
+- `--output <path>` — Save to file (omit for stdout)
 
-### `faf follow` — Crawl
-
-Follows links matching a selector, visits each page, extracts data.
+### Follow — crawl with style
 
 ```bash
 faf https://books.toscrape.com/ follow ".product_pod h3 a" \
@@ -186,34 +214,28 @@ faf https://books.toscrape.com/ follow ".product_pod h3 a" \
 faf https://site.com follow "a" --max 5 --delay 1000 --random-delay 500 2000
 ```
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--extract` | – | CSS selectors to extract from each visited page |
-| `--max` | `10` | Max pages to crawl |
-| `--concurrency` | `3` | Parallel requests |
-| `--delay` | `0` | Fixed delay (ms) between requests |
-| `--random-delay` | – | Random delay range (min max in ms) |
-| `--same-domain` | `true` | Restrict to same domain |
+- `--extract` — CSS selectors to extract from each visited page
+- `--max` — Max pages to crawl (default: 10)
+- `--concurrency` — Parallel requests (default: 3)
+- `--delay` / `--random-delay` — Rate limiting between requests
+- `--same-domain` — Restrict to same domain (default: true)
 
-### `faf` — JavaScript engine
+### JavaScript engine
 
-QuickJS (ES2020) embedded runtime. Executes page scripts with DOM bridge and fetch API. Limited compared to V8 — no ES2021+, no `await` at top level, no `localStorage`, no `MutationObserver`.
+QuickJS (ES2020) embedded runtime. Executes page scripts with DOM bridge and fetch API.
 
 ```bash
 faf https://books.toscrape.com/ --js "document.title"
-# → "All products | Books to Scrape - Sandbox"
-
 faf https://site.com --js "document.querySelectorAll('h3').length"
 faf https://site.com --js-file script.js
 faf https://site.com --js "while(true){}" --js-timeout 2
-# → "JavaScript execution timed out after 2s"
-
 echo 'document.querySelectorAll(".price").length' | faf --stdin --url https://site.com
 ```
 
 The JS bridge exposes: `document.title`, `document.querySelector`, `document.querySelectorAll`, `document.getElementById`, `fetch()`, `setTimeout`, `setInterval`, `console.log/warn/error`.
 
-#### JavaScript API reference
+<details>
+<summary><b>JavaScript API reference</b></summary>
 
 FAF runs QuickJS (ES2020), not V8. The following DOM APIs are polyfilled:
 
@@ -246,7 +268,9 @@ FAF runs QuickJS (ES2020), not V8. The following DOM APIs are polyfilled:
 | `XMLHttpRequest` | ❌ | Use `fetch()` instead |
 | `canvas` / `WebGL` | ❌ | |
 
-### `faf repl` — Interactive mode
+</details>
+
+### REPL — interactive mode
 
 ```bash
 faf repl --url https://books.toscrape.com/
@@ -254,40 +278,20 @@ faf repl --url https://books.toscrape.com/
 "All products | Books to Scrape - Sandbox"
 > document.querySelectorAll('h3').length
 20
-> .json
-> document.querySelector("h1").text
-"\"All products\""
 > .exit
 ```
 
-Commands: `.json` (toggle JSON output), `.exit`, `.help`, `.clear`. Pipe input via `--stdin`:
+Commands: `.json` (toggle JSON output), `.exit`, `.help`, `.clear`.
+
+### Page interaction
 
 ```bash
-echo "document.title" | faf --stdin --url https://site.com
-```
-
-### `faf` — Page interaction
-
-```bash
-# Click an element
 faf click "#btn" --url https://site.com
-
-# Wait for element to appear
 faf wait ".spinner" --url https://site.com --timeout 10
-
-# Watch for changes
 faf watch ".price" --url https://site.com --interval 30 --max-checks 5
 ```
 
-### `faf` — Output formats
-
-```bash
-faf https://site.com query "a" --json                    # JSON pretty
-faf https://site.com query "a" --get "text,href" --format jsonl  # JSONL
-faf https://site.com follow "a" --max 3 --format csv      # CSV
-```
-
-### `faf` — Session & network
+### Session & network
 
 ```bash
 # Proxy
@@ -307,54 +311,13 @@ faf https://site.com --retries 3 --retry-delay 2000
 faf https://site.com --user-agent "FAF/1.0" --timeout 60
 ```
 
-### `faf` — CSS manipulation
+### CSS manipulation
 
 ```bash
-# Inject custom CSS
 faf https://site.com --css "h1 { color: red; }" query "h1"
-
-# Load CSS from file
 faf https://site.com --css custom.css query ".card"
-
-# Disable page CSS
 faf https://site.com --no-page-css query "h1"
 ```
-
----
-
-## Comparison
-
-FAF is **not** a browser automation tool. It does not run Chromium, handle SPAs, or bypass anti-bot detection. It is a **high-performance scraper** with JS execution.
-
-| | curl + pup + jq | BeautifulSoup | Playwright | **FAF** |
-|---|---:|---:|---:|---:|
-| Language | shell | Python | Node.js | **Rust** |
-| Single binary | ❌ | ❌ | ❌ | **✅** |
-| CSS selectors | ❌ | ✅ | ✅ | ✅ |
-| JavaScript | ❌ | ❌ | ✅ (V8) | ✅ (QuickJS) |
-| Self-contained dump | ❌ | ❌ | ❌ | ✅ |
-| Markdown / readability | ❌ | ❌ | ❌ | ✅ |
-| Built-in crawler | ❌ | ❌ | ❌ | ✅ |
-| JSONL/CSV native | ❌ | ❌ | ❌ | ✅ |
-| Cookies / Cache / Retry | ❌ | ❌ | ❌ | ✅ |
-| SPA rendering | ❌ | ❌ | ✅ | ❌ |
-| Anti-bot bypass | ❌ | ❌ | ✅ | ❌ |
-| RAM (avg page) | ~5MB | ~50MB | ~150MB | **~5MB** |
-| First query | ~0.1s | ~2s | ~3s | **~0.3s** |
-
-### When to use FAF vs Playwright
-
-| Scenario | Tool |
-|----------|------|
-| Simple scraping (HTTP GET → parse) | **FAF** |
-| Feed page content to LLMs (markdown, readability) | **FAF** |
-| Crawl with rate-limiting, concurrency | **FAF** |
-| Run on low-resource VPS (5MB RAM) | **FAF** |
-| Archive pages as self-contained HTML | **FAF** |
-| Execute JS-dependent SPAs (React, Vue) | **Playwright** |
-| Bypass anti-bot detection | **Playwright** |
-| Pixel-perfect screenshots | **Playwright** |
-| Automate login flows, form fills via real browser | **Playwright** |
 
 ---
 
@@ -367,7 +330,7 @@ src/
 ├── dom/           HTML parser (scraper/html5ever)
 ├── css/           CSS parser (cssparser), selectors, computed styles
 ├── js/            QuickJS runtime (rquickjs), DOM bridge, fetch bridge
-├── dump/          self-contained HTML generation, CSS/image inlining
+├── dump/          self-contained HTML, markdown, text, readability, structured data
 └── utils/         config, error types
 ```
 
@@ -380,84 +343,82 @@ src/
 | CLI | `clap`, `serde`, `serde_json` |
 | Encoding | `base64`, `sha2`, `hex`, `regex` |
 
+**~10K LOC. 40 files. Zero non-Rust code.** The entire codebase fits in your head.
+
 ---
 
 ## Roadmap
 
-### ✅ M1 — Core Engine
-HTTP client, HTML parsing, CLI, JSON output
+### ✅ Shipped
 
-### ✅ M2 — CSS Engine
-Parser, selector matching, specificity, computed styles, box model
+| Milestone | What |
+|---|---|
+| **M1** — Core Engine | HTTP client, HTML parsing, CLI, JSON output |
+| **M2** — CSS Engine | Parser, selector matching, specificity, computed styles, box model |
+| **M2.5** — Advanced Extraction | `--filter`, `--get`, `follow` crawler, CSV/JSONL output |
+| **M3** — JavaScript Engine | QuickJS runtime, DOM bridge, `fetch()`, timers, page scripts |
+| **M4** — Professional Crawler | Cookies, wait, REPL, rate-limiting, retry, cache, HTTP info |
+| **M5** — Page Interaction | Click, forms, watch mode, scroll simulation |
+| **M6** — Self-Contained Dump | CSS inlining, image-to-base64, URL resolution, script removal |
+| **M7** — LLM-Ready Output | Markdown conversion, readability extraction, structured data, text output |
+| **M8** — Polish & Robustness | Test fixes, stdout pipe support, profile optimization, docs |
 
-### ✅ M2.5 — Advanced Extraction
-`--filter`, `--get`, `follow` crawler, CSV/JSONL output
+**329 tests. 0 failures.**
 
-### ✅ M3 — JavaScript Engine
-QuickJS runtime, DOM bridge, `fetch()`, `setTimeout`, page scripts
+### 🔮 What's next
 
-### ✅ M4 — Professional Crawler Tools
-Cookies, wait, REPL, rate-limiting, retry, cache, HTTP info
+**MCP Server Native** ⚡ — Expose FAF as an MCP (Model Context Protocol) server. Claude Desktop, Cursor, and other AI agents call `faf fetch`, `faf dump`, and structured extraction directly from chat — no shell, no subprocess. One `faf-mcp` binary, thousands of devs already using AI tooling.
 
-### ✅ M5 — Page Interaction
-Click, forms, watch mode, scroll simulation
+**Markdown Optimization for AI** 🧠 — YAML frontmatter with OpenGraph metadata, semantic whitespace compression, and token-aware chunking. Output markdown optimized for LLM context windows — less tokens, more signal. ([#1](https://github.com/tiagoc93/faf-browser/issues/1))
 
-### ✅ M6 — Self-Contained HTML Dump
-CSS inlining, image-to-base64, URL resolution, script removal
+**Daemon Mode + REST API** 🌐 — Run `faf serve` as a background daemon exposing REST endpoints (`POST /fetch`, `POST /crawl`, `GET /dump`). Any language — Python, TypeScript, Go — consumes FAF without Rust bindings. Turns FAF from a CLI into local infrastructure.
+
+**Cross-Platform Binaries** 📦 — GitHub Actions matrix build: Linux x86_64 + ARM64, macOS Intel + Apple Silicon, Windows. Homebrew tap and Winget. One-command install on any OS.
 
 ---
 
-### ✅ M7 — LLM-Ready Output (done)
+## When to use FAF vs Playwright
 
-| Task | Description |
-|---|---|
-| **T090** | `dump --format markdown` — convert HTML to clean Markdown |
-| **T091** | `dump --readability` — extract main content, strip navigation/ads/footers |
-| **T092** | Structured data extraction — JSON-LD, microdata, schema.org, Open Graph |
-| **T093** | `dump --format text` — clean visible text extraction, paragraph-preserving |
-| **T094** | Tests — 12 integration tests + 24 unit tests |
+| Scenario | Use |
+|----------|-----|
+| Simple scraping (HTTP GET → parse) | **FAF** |
+| Feed page content to LLMs (markdown, readability) | **FAF** |
+| Crawl with rate-limiting and concurrency | **FAF** |
+| Run on low-resource VPS (5MB RAM) | **FAF** |
+| Archive pages as self-contained HTML | **FAF** |
+| Execute JS-dependent SPAs (React, Vue) | Playwright |
+| Bypass anti-bot detection | Playwright |
+| Pixel-perfect screenshots | Playwright |
+| Automate login flows via real browser | Playwright |
 
-```
-📦 5 tasks · ✅ 5 concluídas · 309 testes · 0 falhas
-```
-
-### ✅ M8 — Polish & Robustness (done)
-
-| Task | Description |
-|---|---|
-| **T095** | Fix 7 broken tests in `m5_test.rs` — all 19 now pass |
-| **T096** | Integration test for `--inline-images` with PNG served locally |
-| **T097** | Output to stdout when `--output` is omitted (pipe support) |
-| **T098** | Optimize `Cargo.toml` profiles (`dev`, `release-fast`) |
-| **T099** | Update badges and docs — 329 tests, 0 failures |
-
-```
-📦 5 tasks · ✅ 5 concluídas · 329 testes · 0 falhas
-```
-
----
-
-## 🔮 What's Next
-
-### ⚡ MCP Server Native
-Expose FAF as an MCP (Model Context Protocol) server. Claude Desktop, Cursor, and other AI agents could call `faf fetch`, `faf dump`, and structured extraction directly from chat — no shell, no subprocess. One `faf-mcp` binary, thousands of potential users among devs already using AI tooling.
-
-### 🌐 Daemon Mode + Local REST API
-Run `faf serve` as a background daemon exposing REST endpoints (`POST /fetch`, `POST /crawl`, `GET /dump`). Any language — Python, TypeScript, Go — consumes FAF without needing Rust bindings. Turns FAF from a CLI into local infrastructure: a scraping server your scripts and apps can talk to.
-
-### 📦 Cross-Platform Binaries via CI
-GitHub Actions matrix build: Linux x86_64 + ARM64, macOS Intel + Apple Silicon, Windows. Published to Homebrew tap and Winget. Without cross-platform binaries, FAF stays a Linux-only tool. With them, it becomes a general-purpose utility the community can install in one command on any OS.
+**FAF is not a browser automation tool.** It does not run Chromium, handle SPAs, or bypass anti-bot detection. It is a high-performance scraper with JS execution — and it's damn good at it.
 
 ---
 
 ## Contributing
 
 ```bash
-cargo test
+cargo test    # 329 tests
 cargo clippy
 cargo fmt
 ```
 
 Conventional commits: `feat:`, `fix:`, `docs:`, `refactor:`, `chore:`.
+
+---
+
+## ☕ Support
+
+FAF is free, open-source, and will always be. If it saved you time or RAM, consider buying me a coffee — entirely optional, no expectations.
+
+**Pix (any amount):**
+
+```
+e4636446-8087-48b7-bca0-61481687fe27
+```
+
+*This is a random Pix key — no personal data exposed.*
+
+---
 
 MIT © [Tiago Coelho](https://github.com/tiagoc93) — Recife, Brasil.
