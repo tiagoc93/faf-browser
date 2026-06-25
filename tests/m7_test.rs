@@ -426,3 +426,177 @@ fn test_inline_images_replaces_src_with_data_uri() {
     );
     let _ = std::fs::remove_file(&output);
 }
+
+// ── T001: Markdown otimizado para IA ─────────────────────────────
+
+#[tokio::test]
+async fn test_dump_markdown_with_frontmatter() {
+    let html = r##"<html><head>
+        <title>Page</title>
+        <meta property="og:title" content="Hello World">
+        <meta property="og:description" content="A description">
+        <meta property="og:site_name" content="ExampleSite">
+    </head><body><h1>Hello World</h1><p>Body content</p></body></html>"##;
+    let port = start_server(html);
+    let output = output_path("md_frontmatter");
+
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "dump",
+        "--output",
+        &output,
+        "--format",
+        "markdown",
+        "--frontmatter",
+        "true",
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok(), "dump should succeed: {:?}", result);
+
+    let saved = std::fs::read_to_string(&output).unwrap();
+    assert!(saved.starts_with("---\n"), "expected frontmatter, got: {}", &saved[..saved.len().min(200)]);
+    assert!(saved.contains("title: Hello World"), "got: {}", saved);
+    assert!(saved.contains("description: A description"), "got: {}", saved);
+    assert!(saved.contains("site_name: ExampleSite"), "got: {}", saved);
+    // markdown body still present
+    assert!(saved.contains("# Hello World"), "got: {}", saved);
+    let _ = std::fs::remove_file(&output);
+}
+
+#[tokio::test]
+async fn test_dump_markdown_whitespace_collapse() {
+    // HTML with many empty paragraphs to force blank lines
+    let html = "<html><body><h1>Title</h1><p>one</p><p></p><p></p><p></p><p></p><p>two</p></body></html>";
+    let port = start_server(html);
+    let output = output_path("md_whitespace");
+
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "dump",
+        "--output",
+        &output,
+        "--format",
+        "markdown",
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok(), "dump should succeed: {:?}", result);
+
+    let saved = std::fs::read_to_string(&output).unwrap();
+    assert!(
+        !saved.contains("\n\n\n"),
+        "expected no 3+ consecutive newlines, got: {:?}",
+        &saved
+    );
+    let _ = std::fs::remove_file(&output);
+}
+
+#[tokio::test]
+async fn test_dump_markdown_chunk_size() {
+    let mut body = String::new();
+    for i in 1..=10 {
+        body.push_str(&format!("<h2>Section {}</h2>", i));
+        body.push_str(&"<p>word ".repeat(100));
+        body.push_str("</p>");
+    }
+    let html = format!("<html><body>{}</body></html>", body);
+    let port = start_server(Box::leak(html.into_boxed_str()));
+    let _output = output_path("md_chunk");
+
+    let output_md = format!("/tmp/faf_test_m7_md_chunk_{}.md", std::process::id());
+
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "dump",
+        "--output",
+        &output_md,
+        "--format",
+        "markdown",
+        "--chunk-size",
+        "50",
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok(), "dump should succeed: {:?}", result);
+
+    // chunked output writes multiple files: output_01.md, output_02.md, ...
+    let chunk1 = format!("/tmp/faf_test_m7_md_chunk_{}_01.md", std::process::id());
+    let chunk2 = format!("/tmp/faf_test_m7_md_chunk_{}_02.md", std::process::id());
+    let saved = std::fs::read_to_string(&chunk1).expect("chunk_01 should exist");
+    assert!(saved.contains("Section"), "got: {}", &saved[..saved.len().min(200)]);
+    assert!(std::path::Path::new(&chunk2).exists(), "expected at least 2 chunks");
+    let _ = std::fs::remove_file(&chunk1);
+    let _ = std::fs::remove_file(&chunk2);
+    let _ = std::fs::remove_file(&output_md);
+}
+
+#[tokio::test]
+async fn test_dump_markdown_chunk_with_frontmatter() {
+    let mut body = String::new();
+    for i in 1..=8 {
+        body.push_str(&format!("<h2>Section {}</h2>", i));
+        body.push_str(&"<p>word ".repeat(80));
+        body.push_str("</p>");
+    }
+    let html = format!(
+        r##"<html><head><meta property="og:title" content="Chunked Page"><meta property="og:description" content="desc"></head><body>{}</body></html>"##,
+        body
+    );
+    let port = start_server(Box::leak(html.into_boxed_str()));
+    let _output = output_path("md_chunk_fm");
+
+    let output_md = format!("/tmp/faf_test_m7_md_chunk_fm_{}.md", std::process::id());
+
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "dump",
+        "--output",
+        &output_md,
+        "--format",
+        "markdown",
+        "--chunk-size",
+        "40",
+        "--frontmatter",
+        "true",
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok(), "dump should succeed: {:?}", result);
+
+    // chunked output: each chunk file carries frontmatter at the top
+    let chunk1 = format!("/tmp/faf_test_m7_md_chunk_fm_{}_01.md", std::process::id());
+    let chunk2 = format!("/tmp/faf_test_m7_md_chunk_fm_{}_02.md", std::process::id());
+    let saved = std::fs::read_to_string(&chunk1).expect("chunk_01 should exist");
+    assert!(saved.starts_with("---\n"), "expected frontmatter in chunk, got: {}", &saved[..saved.len().min(200)]);
+    assert!(saved.contains("title: Chunked Page"), "got: {}", &saved[..saved.len().min(300)]);
+    assert!(std::path::Path::new(&chunk2).exists(), "expected at least 2 chunks");
+    let _ = std::fs::remove_file(&chunk1);
+    let _ = std::fs::remove_file(&chunk2);
+    let _ = std::fs::remove_file(&output_md);
+}
+
+#[tokio::test]
+async fn test_dump_markdown_no_flags_still_valid() {
+    let html = "<html><body><h1>Title</h1><p>Body content here</p></body></html>";
+    let port = start_server(html);
+    let output = output_path("md_compat");
+
+    let cli = Cli::parse_from([
+        "faf",
+        &format!("http://127.0.0.1:{}/", port),
+        "dump",
+        "--output",
+        &output,
+        "--format",
+        "markdown",
+    ]);
+    let result = run(cli).await;
+    assert!(result.is_ok(), "dump should succeed: {:?}", result);
+
+    let saved = std::fs::read_to_string(&output).unwrap();
+    assert!(saved.contains("# Title"), "got: {}", saved);
+    assert!(saved.contains("Body content here"), "got: {}", saved);
+    // default frontmatter is on, but no meta tags here so no frontmatter block
+    let _ = std::fs::remove_file(&output);
+}

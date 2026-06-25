@@ -217,6 +217,14 @@ pub struct DumpArgs {
     /// Extrair dados estruturados (JSON-LD, Open Graph, meta tags)
     #[arg(long = "structured-data")]
     pub structured_data: bool,
+
+    /// Incluir YAML frontmatter com metadadosOpenGraph na saída markdown (default: on)
+    #[arg(long = "frontmatter", action = clap::ArgAction::Set, default_value = "true")]
+    pub frontmatter: bool,
+
+    /// Dividir markdown em chunks de N tokens (0 = desativado)
+    #[arg(long = "chunk-size", default_value = "0")]
+    pub chunk_size: usize,
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -873,19 +881,33 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 format: args.format.clone(),
                 readability: args.readability,
                 structured_data: args.structured_data,
+                frontmatter: args.frontmatter,
+                chunk_size: args.chunk_size,
             };
 
             let result_html = crate::dump::dump_to_string(&html, &config)?;
 
             if let Some(ref output_path) = args.output {
-                crate::dump::write_to_file(&result_html, output_path)?;
-                if format == "json" {
-                    println!(
-                        "{}",
-                        serde_json::json!({"dump": output_path, "url": url})
-                    );
+                if config.chunk_size > 0 && (config.format == "markdown" || config.format == "md") {
+                    crate::dump::write_chunked_output(&result_html, output_path)?;
+                    if format == "json" {
+                        println!(
+                            "{}",
+                            serde_json::json!({"dump": output_path, "url": url})
+                        );
+                    } else {
+                        println!("💾 Chunks salvos em: {}", output_path);
+                    }
                 } else {
-                    println!("💾 HTML salvo em: {}", output_path);
+                    crate::dump::write_to_file(&result_html, output_path)?;
+                    if format == "json" {
+                        println!(
+                            "{}",
+                            serde_json::json!({"dump": output_path, "url": url})
+                        );
+                    } else {
+                        println!("💾 HTML salvo em: {}", output_path);
+                    }
                 }
             } else {
                 use std::io::Write;

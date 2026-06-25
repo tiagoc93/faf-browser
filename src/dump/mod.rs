@@ -11,7 +11,7 @@ use std::path::Path;
 
 use crate::dump::css_inline::inline_css;
 use crate::dump::image_inline::inline_images;
-use crate::dump::markdown::html_to_markdown;
+use crate::dump::markdown::{chunk_markdown, collapse_whitespace, html_to_markdown, inject_frontmatter};
 use crate::dump::readability::extract_main_content;
 use crate::dump::structured_data::extract_structured_data;
 use crate::dump::text::html_to_text;
@@ -25,6 +25,8 @@ pub struct DumpConfig {
     pub format: String,
     pub readability: bool,
     pub structured_data: bool,
+    pub frontmatter: bool,
+    pub chunk_size: usize,
 }
 
 impl Default for DumpConfig {
@@ -37,6 +39,8 @@ impl Default for DumpConfig {
             format: "html".to_string(),
             readability: false,
             structured_data: false,
+            frontmatter: false,
+            chunk_size: 0,
         }
     }
 }
@@ -76,7 +80,26 @@ pub fn dump_to_string(html: &str, config: &DumpConfig) -> anyhow::Result<String>
     match config.format.as_str() {
         "markdown" | "md" => {
             log::info!("Convertendo para Markdown...");
+            let original_html = html;
             result = html_to_markdown(&result);
+            if config.frontmatter {
+                let with_fm = inject_frontmatter(original_html, &result);
+                if !with_fm.is_empty() {
+                    result = with_fm;
+                }
+            }
+            result = collapse_whitespace(&result);
+            if config.chunk_size > 0 {
+                let chunks_json = chunk_markdown(&result, config.chunk_size);
+                result = if config.frontmatter {
+                    let fm = inject_frontmatter(original_html, "");
+                    // inject_frontmatter returns "" + markdown; we want just the YAML block
+                    let fm_only = extract_frontmatter_block(&fm);
+                    wrap_chunks_with_frontmatter(&chunks_json, &fm_only)
+                } else {
+                    chunks_json
+                };
+            }
         }
         "text" | "txt" => {
             log::info!("Extraindo texto puro...");
@@ -86,6 +109,31 @@ pub fn dump_to_string(html: &str, config: &DumpConfig) -> anyhow::Result<String>
     }
 
     Ok(result)
+}
+
+fn wrap_chunks_with_frontmatter(chunks_json: &str, frontmatter: &str) -> String {
+    let parsed: serde_json::Value = match serde_json::from_str(chunks_json) {
+        Ok(v) => v,
+        Err(_) => return chunks_json.to_string(),
+    };
+    let mut obj = serde_json::Map::new();
+    if !frontmatter.is_empty() {
+        obj.insert("frontmatter".to_string(), serde_json::json!(frontmatter));
+    }
+    if let Some(chunks) = parsed.get("chunks") {
+        obj.insert("chunks".to_string(), chunks.clone());
+    }
+    serde_json::to_string_pretty(&serde_json::Value::Object(obj)).unwrap_or_default()
+}
+
+fn extract_frontmatter_block(frontmatter_envelope: &str) -> String {
+    if frontmatter_envelope.is_empty() {
+        return String::new();
+    }
+    if let Some(end) = frontmatter_envelope.find("\n---\n") {
+        return frontmatter_envelope[..end + 4].to_string();
+    }
+    frontmatter_envelope.to_string()
 }
 
 pub fn dump_to_file(html: &str, config: &DumpConfig, output_path: &str) -> anyhow::Result<()> {
@@ -102,6 +150,43 @@ pub fn write_to_file(content: &str, output_path: &str) -> anyhow::Result<()> {
     }
     fs::write(path, content)?;
     log::info!("Arquivo salvo em {} ({} bytes)", output_path, content.len());
+    Ok(())
+}
+
+/// Escreve saída chunked como múltiplos arquivos: `output_01.md`, `output_02.md`, ...
+/// Se o JSON envelope tiver frontmatter, ele é prepended a cada chunk.
+pub fn write_chunked_output(content: &str, output_path: &str) -> anyhow::Result<()> {
+    let parsed: serde_json::Value = match serde_json::from_str(content) {
+        Ok(v) => v,
+        Err(_) => return write_to_file(content, output_path),
+    };
+
+    let path = Path::new(output_path);
+    let parent = path.parent().filter(|p| !p.as_os_str().is_empty());
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
+    let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("md");
+    let dir = parent.map(|p| p.to_path_buf()).unwrap_or_default();
+
+    let frontmatter = parsed.get("frontmatter").and_then(|v| v.as_str()).unwrap_or("");
+
+    let chunks = match parsed.get("chunks").and_then(|v| v.as_array()) {
+        Some(c) => c,
+        None => return write_to_file(content, output_path),
+    };
+
+    for (i, chunk) in chunks.iter().enumerate() {
+        let content_str = chunk.get("content").and_then(|v| v.as_str()).unwrap_or("");
+        let combined = if !frontmatter.is_empty() {
+            format!("{}\n\n{}", frontmatter, content_str)
+        } else {
+            content_str.to_string()
+        };
+        let name = format!("{}_{:02}.{}", stem, i + 1, ext);
+        let path = dir.join(&name);
+        let len = combined.len();
+        fs::write(&path, combined)?;
+        log::info!("Chunk {} salvo em {} ({} bytes)", i + 1, path.display(), len);
+    }
     Ok(())
 }
 

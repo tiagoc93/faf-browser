@@ -1,5 +1,7 @@
 use scraper::Html;
 
+use crate::dump::structured_data::extract_structured_data;
+
 pub fn html_to_markdown(html: &str) -> String {
     let document = Html::parse_document(html);
     let mut output = String::new();
@@ -10,7 +12,7 @@ pub fn html_to_markdown(html: &str) -> String {
         convert_node(document.root_element(), &mut output);
     }
 
-    collapse_spacing(&output)
+    collapse_whitespace(&output)
 }
 
 fn find_body(document: &Html) -> Option<scraper::ElementRef<'_>> {
@@ -206,14 +208,193 @@ fn convert_table(element: scraper::ElementRef, output: &mut String) {
     output.push('\n');
 }
 
-fn collapse_spacing(text: &str) -> String {
-    let trimmed = text
-        .lines()
-        .map(|l| l.trim())
-        .collect::<Vec<_>>()
-        .join("\n");
+/// Collapse 3+ blank lines to exactly 1, strip trailing whitespace per line,
+/// and drop lines that are navigation-only URLs with <3 chars of useful text.
+pub fn collapse_whitespace(markdown: &str) -> String {
+    let url_re =
+        regex::Regex::new(r"^https?://\S{0,3}$").unwrap();
+    let mut out_lines: Vec<String> = Vec::new();
+    for line in markdown.lines() {
+        let trimmed = line.trim_end();
+        if trimmed.trim().is_empty() {
+            out_lines.push(String::new());
+            continue;
+        }
+        if url_re.is_match(trimmed.trim()) {
+            continue;
+        }
+        out_lines.push(trimmed.to_string());
+    }
+    let joined = out_lines.join("\n");
     let re = regex::Regex::new(r"\n{3,}").unwrap();
-    re.replace_all(&trimmed, "\n\n").trim().to_string()
+    re.replace_all(&joined, "\n\n").trim().to_string()
+}
+
+/// Build a YAML frontmatter block from page metadata (OpenGraph, meta tags, title).
+/// Returns an empty string when no useful metadata is found.
+pub fn inject_frontmatter(html: &str, markdown: &str) -> String {
+    let data = extract_structured_data(html);
+    let meta = data.get("meta").and_then(|v| v.as_object()).cloned().unwrap_or_default();
+    let og = data.get("open_graph").and_then(|v| v.as_object()).cloned().unwrap_or_default();
+    let json_ld = data.get("json_ld").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+
+    let mut lines: Vec<String> = Vec::new();
+
+    let title = og.get("title")
+        .or_else(|| meta.get("title"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    if let Some(t) = title {
+        lines.push(format!("title: {}", yaml_escape(&t)));
+    }
+
+    if let Some(desc) = og.get("description")
+        .or_else(|| meta.get("description"))
+        .and_then(|v| v.as_str())
+    {
+        if !desc.is_empty() {
+            lines.push(format!("description: {}", yaml_escape(desc)));
+        }
+    }
+
+    if let Some(site) = og.get("site_name").and_then(|v| v.as_str()) {
+        if !site.is_empty() {
+            lines.push(format!("site_name: {}", yaml_escape(site)));
+        }
+    }
+
+    if let Some(url) = og.get("url").and_then(|v| v.as_str()) {
+        if !url.is_empty() {
+            lines.push(format!("url: {}", yaml_escape(url)));
+        }
+    }
+
+    if let Some(author) = meta.get("author").and_then(|v| v.as_str()) {
+        if !author.is_empty() {
+            lines.push(format!("author: {}", yaml_escape(author)));
+        }
+    }
+
+    if let Some(published) = og.get("published_time")
+        .or_else(|| og.get("article:published_time"))
+        .and_then(|v| v.as_str())
+    {
+        if !published.is_empty() {
+            lines.push(format!("published: {}", yaml_escape(published)));
+        }
+    }
+
+    if let Some(twitter) = og.get("twitter_card").and_then(|v| v.as_str()) {
+        if !twitter.is_empty() {
+            lines.push(format!("twitter_card: {}", yaml_escape(twitter)));
+        }
+    }
+
+    if !json_ld.is_empty() {
+        let types: Vec<String> = json_ld.iter()
+            .filter_map(|v| v.get("@type"))
+            .filter_map(|t| t.as_str().map(|s| yaml_escape(s)))
+            .collect();
+        if !types.is_empty() {
+            lines.push(format!("json_ld_types: [{}]", types.join(", ")));
+        }
+    }
+
+    if lines.is_empty() {
+        return String::new();
+    }
+
+    format!("---\n{}\n---\n\n{}", lines.join("\n"), markdown)
+}
+
+fn yaml_escape(value: &str) -> String {
+    if value.contains(':')
+        || value.contains('#')
+        || value.contains('\n')
+        || value.contains('"')
+        || value.contains('\'')
+        || value.trim_start().starts_with('-')
+        || value.trim_start().starts_with('[')
+        || value.trim_start().starts_with('{')
+    {
+        let escaped = value.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', " ");
+        format!("\"{}\"", escaped)
+    } else {
+        value.replace('\n', " ").to_string()
+    }
+}
+
+#[derive(serde::Serialize)]
+struct Chunk {
+    index: usize,
+    tokens_est: usize,
+    content: String,
+}
+
+/// Split markdown into chunks of approximately `max_tokens` tokens (heuristic: 4 chars/token).
+/// Strategy: split by sections (##, ###), then paragraphs, then lines; never cut mid-line.
+/// Returns a JSON object `{ "chunks": [ {index, tokens_est, content}, ... ] }`.
+pub fn chunk_markdown(markdown: &str, max_tokens: usize) -> String {
+    if max_tokens == 0 {
+        return markdown.to_string();
+    }
+    let max_chars = max_tokens.saturating_mul(4).max(1);
+
+    let mut sections: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for line in markdown.lines() {
+        let is_section = line.starts_with("## ") || line.starts_with("### ");
+        if is_section && !current.trim().is_empty() {
+            sections.push(std::mem::take(&mut current));
+        }
+        current.push_str(line);
+        current.push('\n');
+    }
+    if !current.trim().is_empty() {
+        sections.push(current);
+    }
+
+    let mut chunks: Vec<String> = Vec::new();
+    for section in sections {
+        if section.chars().count() <= max_chars {
+            chunks.push(section);
+            continue;
+        }
+        let paragraphs: Vec<&str> = section.split("\n\n").collect();
+        let mut buf = String::new();
+        for para in paragraphs {
+            if para.chars().count() <= max_chars {
+                if buf.chars().count() + para.chars().count() + 2 > max_chars && !buf.is_empty() {
+                    chunks.push(std::mem::take(&mut buf));
+                }
+                buf.push_str(para);
+                buf.push_str("\n\n");
+                continue;
+            }
+            // paragraph too big: split by lines
+            for line in para.lines() {
+                if buf.chars().count() + line.chars().count() + 1 > max_chars && !buf.is_empty() {
+                    chunks.push(std::mem::take(&mut buf));
+                }
+                buf.push_str(line);
+                buf.push('\n');
+            }
+        }
+        if !buf.trim().is_empty() {
+            chunks.push(buf);
+        }
+    }
+
+    let result: Vec<Chunk> = chunks
+        .into_iter()
+        .enumerate()
+        .map(|(index, content)| {
+            let tokens_est = content.chars().count().div_ceil(4);
+            Chunk { index, tokens_est, content: content.trim().to_string() }
+        })
+        .collect();
+
+    serde_json::to_string_pretty(&serde_json::json!({ "chunks": result })).unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -365,5 +546,105 @@ mod tests {
         let result = html_to_markdown(html);
         assert!(result.contains("# Title"));
         assert!(result.contains("## Section"));
+    }
+
+    #[test]
+    fn test_collapse_whitespace_removes_trailing_spaces() {
+        let input = "line one   \nline two\t\n\n\n\n\nline three";
+        let result = collapse_whitespace(input);
+        assert!(!result.contains("  \n"));
+        assert!(!result.contains("\t\n"));
+        assert!(result.matches("\n\n\n").count() == 0);
+    }
+
+    #[test]
+    fn test_collapse_whitespace_collapses_blanks() {
+        let input = "para one\n\n\n\n\n\npara two";
+        let result = collapse_whitespace(input);
+        assert_eq!(result, "para one\n\npara two");
+    }
+
+    #[test]
+    fn test_collapse_whitespace_drops_short_url_lines() {
+        let input = "intro\nhttp://a\n\ntext";
+        let result = collapse_whitespace(input);
+        assert!(!result.contains("http://a"));
+        assert!(result.contains("intro"));
+        assert!(result.contains("text"));
+    }
+
+    #[test]
+    fn test_collapse_whitespace_keeps_real_urls() {
+        let input = "see http://example.com/page now";
+        let result = collapse_whitespace(input);
+        assert!(result.contains("http://example.com/page"));
+    }
+
+    #[test]
+    fn test_inject_frontmatter_with_og() {
+        let html = r##"<html><head><title>Page</title><meta property="og:title" content="Hello"><meta property="og:description" content="Desc"></head><body><p>body</p></body></html>"##;
+        let md = "# Hello\n\nbody";
+        let result = inject_frontmatter(html, md);
+        assert!(result.starts_with("---\n"));
+        assert!(result.contains("title: Hello"));
+        assert!(result.contains("description: Desc"));
+    }
+
+    #[test]
+    fn test_inject_frontmatter_no_metadata() {
+        let html = "<html><body><p>just content</p></body></html>";
+        let md = "# Just content";
+        let result = inject_frontmatter(html, md);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_inject_frontmatter_partial_meta() {
+        let html = r##"<html><head><meta name="author" content="Alice"></head><body></body></html>"##;
+        let md = "content";
+        let result = inject_frontmatter(html, md);
+        assert!(result.contains("author: Alice"));
+    }
+
+    #[test]
+    fn test_chunk_markdown_disabled() {
+        let md = "# Title\n\nbody text";
+        let result = chunk_markdown(md, 0);
+        assert_eq!(result, md);
+    }
+
+    #[test]
+    fn test_chunk_markdown_short_single_chunk() {
+        let md = "# Title\n\nshort body";
+        let result = chunk_markdown(md, 500);
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        let chunks = parsed["chunks"].as_array().unwrap();
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0]["index"], 0);
+        assert!(chunks[0]["content"].as_str().unwrap().contains("Title"));
+    }
+
+    #[test]
+    fn test_chunk_markdown_multiple_sections() {
+        let mut md = String::new();
+        for i in 1..=5 {
+            md.push_str(&format!("## Section {}\n\n", i));
+            md.push_str(&"a b c d e f g h i j ".repeat(40));
+            md.push_str("\n\n");
+        }
+        let result = chunk_markdown(&md, 50);
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        let chunks = parsed["chunks"].as_array().unwrap();
+        assert!(chunks.len() >= 2, "expected multiple chunks, got {}", chunks.len());
+    }
+
+    #[test]
+    fn test_chunk_markdown_huge_paragraph_splits_by_line() {
+        let paragraph = "word ".repeat(800);
+        let md = format!("# Title\n\n{}", paragraph);
+        let result = chunk_markdown(&md, 30);
+        let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
+        let chunks = parsed["chunks"].as_array().unwrap();
+        assert!(chunks.len() > 1);
     }
 }

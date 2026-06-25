@@ -198,6 +198,29 @@ faf dump --url https://site.com --structured-data
 # → {"json_ld": [...], "open_graph": {...}, "meta": {...}}
 ```
 
+**Markdown para IA (`--frontmatter`, `--chunk-size`):**
+
+When using `--format markdown`, two optimizations make output pipeline-ready for LLMs:
+
+- `--frontmatter on|off` — Prepend YAML frontmatter with OpenGraph/meta metadata (default: `on` for markdown).
+- `--chunk-size N` — Split long pages into token-bounded chunks (heuristic 4 chars/token). Divides by section, then paragraph, then line — never mid-line.
+
+```bash
+# Markdown com frontmatter de metadados
+faf dump --url https://blog.com/article --format markdown --frontmatter true
+# → ---\n  title: ...\n  description: ...\n  site_name: ...\n---\n  # Title...
+
+# Chunking para context windows
+faf dump --url https://long-article.com --format markdown --chunk-size 500 --output article.md
+# → article_01.md, article_02.md, ... (cada um com frontmatter)
+
+# Chunks para stdout (JSON envelope)
+faf dump --url https://long-article.com --format markdown --chunk-size 500
+# → { "frontmatter": "...", "chunks": [{ "index": 0, "tokens_est": 480, "content": "..." }] }
+```
+
+Whitespace collapse is always on: 3+ blank lines collapse to 1, trailing whitespace is stripped, and navigation-only URL lines with <3 useful chars are removed.
+
 **Self-contained options:**
 
 - `--no-scripts` — Remove all `<script>` tags and `on*` event handlers
