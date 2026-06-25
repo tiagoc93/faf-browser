@@ -548,7 +548,7 @@ FAF is free, open-source, and will always be. If it saved you time or RAM, consi
 e4636446-8087-48b7-bca0-61481687fe27
 ```
 
-*This is a random Pix key — no personal data exposed.*
+
 
 </details>
 
