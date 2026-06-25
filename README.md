@@ -547,6 +547,7 @@ FAF is free, open-source, and will always be. If it saved you time or RAM, consi
 ```
 e4636446-8087-48b7-bca0-61481687fe27
 ```
+<img width="885" height="394" alt="image" src="https://github.com/user-attachments/assets/657d2513-543d-45ff-b5a6-dc963ec0ddb7" />
 
 
 
