@@ -5,9 +5,9 @@
 <p align="center">
   <a href="https://github.com/tiagoc93/faf-browser/actions"><img src="https://img.shields.io/badge/status-active-2ea043?style=flat-square" alt="Status"></a>
   <a href="#"><img src="https://img.shields.io/badge/Rust-Edition%202024-orange?style=flat-square&logo=rust" alt="Rust 2024"></a>
-  <a href="#"><img src="https://img.shields.io/badge/tests-329%20passed-green?style=flat-square" alt="Tests"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT"></a>
-  <a href="#"><img src="https://img.shields.io/badge/binary-~8MB-lightgrey?style=flat-square" alt="Binary"></a>
+  <a href="#"><img src="https://img.shields.io/badge/tests-360%20passed-green?style=flat-square" alt="Tests"></a>
+  <a href="#"><img src="https://img.shields.io/badge/binary-8MB-lightgrey?style=flat-square" alt="Binary"></a>
+  <a href="#"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT"></a>
 </p>
 
 ---
@@ -22,6 +22,79 @@ It speaks CSS selectors, runs real JavaScript via QuickJS, handles cookies/cachi
 
 ---
 
+## Table of Contents
+
+- [See it in action](#see-it-in-action)
+- [Built for AI pipelines](#built-for-ai-pipelines)
+- [Why FAF](#why-faf)
+- [Comparison](#comparison)
+- [Quick install](#quick-install)
+- [Features](#features)
+- [Limitations](#limitations)
+- [Usage](#usage)
+- [Architecture](#architecture)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [Support](#support)
+
+---
+
+## See it in action
+
+```bash
+# One command → clean Markdown with metadata, ready for any LLM
+$ faf dump --url https://example.com --format markdown
+
+---
+title: Example Domain
+url: "https://example.com"
+---
+
+# Example Domain
+
+This domain is for use in documentation examples without needing
+permission. Avoid use in operations.
+
+[Learn more](https://iana.org/domains/example)
+```
+
+```bash
+# Readability extraction + chunking for context windows
+$ faf dump --url https://doc.rust-lang.org/book/ch01-01-installation.html \
+    --format markdown --readability --chunk-size 100
+
+{
+  "chunks": [
+    { "index": 0, "tokens_est": 58, "content": "## Installation\n\nThe first step..." },
+    { "index": 1, "tokens_est": 88, "content": "Note: If you prefer not to use..." },
+    { "index": 2, "tokens_est": 89, "content": "compile will continue to..." }
+  ]
+}
+```
+
+No BeautifulSoup. No Selenium. No Node.js. Just Rust.
+
+---
+
+## Built for AI pipelines
+
+FAF was designed from the ground up to feed clean data into LLMs and RAG pipelines:
+
+- **YAML frontmatter** — OpenGraph, meta tags, JSON-LD types extracted automatically. Every markdown output starts with structured metadata the LLM can use for context — title, description, author, date, URL.
+- **Readability extraction** — strips navigation, sidebars, footers, ads. Keeps only the main content using text-density scoring. Less tokens, more signal.
+- **Whitespace collapse** — always on. 3+ blank lines collapse to 1, trailing whitespace stripped, navigation-only URL lines dropped. Every byte counts when you're paying per token.
+- **Token-aware chunking** — `--chunk-size N` splits long pages into token-bounded chunks (heuristic: 4 chars/token). Divides by section, then paragraph, then line — never cuts mid-line. Each chunk carries the frontmatter for context continuity.
+
+```bash
+# The RAG pipeline in one command
+faf dump --url https://long-article.com \
+  --format markdown --readability --chunk-size 500 \
+  --output article.md
+# → article_01.md, article_02.md, ... (each with frontmatter)
+```
+
+---
+
 ## Why FAF
 
 ### The problem
@@ -31,45 +104,46 @@ Modern scraping stacks are heavy and fragmented:
 - **Playwright/Puppeteer** spin up a full Chromium (~150MB RAM, ~3s startup) to render one page
 - **BeautifulSoup** is pure Python — slow, no JS, no built-in output formats
 - **curl + pup + jq** is a shell glue nightmare — different tools, different syntaxes, no session state
+- **Firecrawl / Jina Reader** are SaaS — rate-limited, privacy concerns, require API keys, latency for every request
 - **None of them** output Markdown or do readability extraction natively
 
 You end up with 4 tools, 3 languages, and 200MB of RAM to scrape one table.
 
 ### The FAF way
 
-| | Playwright | BeautifulSoup | curl + pup + jq | **FAF** |
-|---|:---:|:---:|:---:|:---:|
-| Binary | 150MB+ (Chromium) | Python runtime | 3 separate bins | **8MB** |
-| RAM per page | ~150MB | ~50MB | ~5MB | **~5MB** |
-| First query | ~3s | ~2s | ~0.1s | **~0.3s** |
-| CSS selectors | ✅ | ✅ | ❌ | ✅ |
-| JavaScript | ✅ (V8) | ❌ | ❌ | ✅ (QuickJS) |
-| Markdown output | ❌ | ❌ | ❌ | **✅** |
-| Readability extraction | ❌ | ❌ | ❌ | **✅** |
-| Self-contained HTML dump | ❌ | ❌ | ❌ | **✅** |
-| Built-in crawler | ❌ | ❌ | ❌ | **✅** |
-| Cookies / Cache / Retry | ❌ | ❌ | ❌ | **✅** |
-| JSONL / CSV native | ❌ | ❌ | ❌ | **✅** |
-| SPA rendering | ✅ | ❌ | ❌ | ❌ |
-| Anti-bot bypass | ✅ | ❌ | ❌ | ❌ |
+FAF replaces the scraping stack with a single binary that runs anywhere:
 
-**FAF trades SPA rendering and anti-bot bypass for 30× less RAM and 10× faster startup.** If you're feeding data to LLMs, building RAG pipelines, crawling APIs, or archiving content — that's the trade you want.
+- **Privacy:** No SaaS, no API keys, no data leaving your machine. Every request goes from your process.
+- **Cost:** Zero per-request fees. No rate limits. No quota.
+- **Latency:** ~300ms first query, ~5MB RAM per page. Same machine, same process, same binary.
+- **Simplicity:** One tool, one syntax, one output format per command. Pipes work.
 
-### Built for AI pipelines
+---
 
-```bash
-# One command → clean Markdown ready for any LLM
-faf dump --url https://blog.com/article --format markdown --readability --no-scripts
+## Comparison
 
-# Pipe directly into your AI agent
-faf dump --url https://docs.rs/tokio --format markdown --readability | your-llm-tool
+| | Playwright | BeautifulSoup | curl+pup+jq | Firecrawl | Jina Reader | **FAF** |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Binary size | 150MB+ (Chromium) | Python runtime | 3 separate bins | SaaS | SaaS | **8MB** |
+| RAM per page | ~150MB | ~50MB | ~5MB | N/A | N/A | **~5MB** |
+| First query | ~3s | ~2s | ~0.1s | ~1-2s (network) | ~1-2s (network) | **~0.3s** |
+| Privacy | ✅ local | ✅ local | ✅ local | ❌ SaaS | ❌ SaaS | **✅ local** |
+| Per-request cost | free | free | free | paid | free tier | **free** |
+| CSS selectors | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ |
+| JavaScript | ✅ (V8) | ❌ | ❌ | ✅ | ❌ | ✅ (QuickJS) |
+| Markdown output | ❌ | ❌ | ❌ | ✅ | ✅ | **✅** |
+| YAML frontmatter | ❌ | ❌ | ❌ | ❌ | ❌ | **✅** |
+| Readability extraction | ❌ | ❌ | ❌ | ✅ | ✅ | **✅** |
+| Token-aware chunking | ❌ | ❌ | ❌ | ❌ | ❌ | **✅** |
+| Self-contained HTML dump | ❌ | ❌ | ❌ | ❌ | ❌ | **✅** |
+| Built-in crawler | ❌ | ❌ | ❌ | ✅ | ❌ | **✅** |
+| Cookies / Cache / Retry | ❌ | ❌ | ❌ | ❌ | ❌ | **✅** |
+| JSONL / CSV native | ❌ | ❌ | ✅ | ❌ | ❌ | **✅** |
+| SPA rendering | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| Anti-bot bypass | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| Offline / air-gapped | ❌ | ✅ | ✅ | ❌ | ❌ | **✅** |
 
-# Crawl a site, extract data, output CSV — no glue code
-faf https://books.toscrape.com/ follow ".product_pod h3 a" \
-  --extract "h3,.price_color" --max 50 --format csv > products.csv
-```
-
-No BeautifulSoup soup. No Selenium weight. No Node.js dependency. Just Rust.
+**FAF trades SPA rendering and anti-bot bypass for 30× less RAM, 10× faster startup, full privacy, and LLM-native output.** If you're feeding data to LLMs, building RAG pipelines, crawling APIs, or archiving content — that's the trade you want.
 
 ---
 
@@ -110,6 +184,8 @@ source ~/.bashrc
 
 **Dump** — self-contained HTML, Markdown, text output, readability, structured data extraction
 
+**LLM-Ready Markdown** — YAML frontmatter with OpenGraph metadata, semantic whitespace compression, token-aware chunking, GFM tables with column separators
+
 **Crawl** — `follow` links with concurrency, rate-limiting, filters, and selective extraction
 
 **Output** — JSON, JSONL, CSV, plain text — pipe-friendly
@@ -119,6 +195,20 @@ source ~/.bashrc
 **Interaction** — click, form fill, watch for changes, scroll simulation
 
 **Performance** — ~300ms first query, ~5MB RAM per page, single binary
+
+---
+
+## Limitations
+
+FAF is honest about what it doesn't do:
+
+- **No SPA rendering** — React, Vue, Angular apps that require a real browser won't fully render. QuickJS executes page scripts, but there's no layout engine or viewport.
+- **No anti-bot bypass** — Cloudflare challenges, CAPTCHAs, and fingerprinting detection are not supported. FAF sends a normal HTTP request, not a real browser.
+- **No screenshots** — FAF doesn't render pixels. Use Playwright for visual testing.
+- **JS is QuickJS, not V8** — ES2020 only. Some modern APIs (`MutationObserver`, `IntersectionObserver`, `WebSocket`, `canvas`, `WebGL`) are not available. See the [JS API reference](#javascript-engine) below.
+- **Linux x86_64 only** — for now. Cross-platform binaries are on the roadmap.
+
+If you need any of the above, use Playwright. FAF and Playwright are complementary, not competing.
 
 ---
 
@@ -198,26 +288,34 @@ faf dump --url https://site.com --structured-data
 # → {"json_ld": [...], "open_graph": {...}, "meta": {...}}
 ```
 
-**Markdown para IA (`--frontmatter`, `--chunk-size`):**
+**Markdown for AI (`--frontmatter`, `--chunk-size`):**
 
-When using `--format markdown`, two optimizations make output pipeline-ready for LLMs:
+When using `--format markdown`, three optimizations make output pipeline-ready for LLMs:
 
 - `--frontmatter on|off` — Prepend YAML frontmatter with OpenGraph/meta metadata (default: `on` for markdown).
 - `--chunk-size N` — Split long pages into token-bounded chunks (heuristic 4 chars/token). Divides by section, then paragraph, then line — never mid-line.
 
 ```bash
-# Markdown com frontmatter de metadados
+# Markdown with frontmatter metadata
 faf dump --url https://blog.com/article --format markdown --frontmatter true
-# → ---\n  title: ...\n  description: ...\n  site_name: ...\n---\n  # Title...
+# → ---
+  title: ...
+  description: ...
+  site_name: ...
+  url: ...
+  ---
+  # Title...
 
-# Chunking para context windows
+# Chunking for context windows
 faf dump --url https://long-article.com --format markdown --chunk-size 500 --output article.md
-# → article_01.md, article_02.md, ... (cada um com frontmatter)
+# → article_01.md, article_02.md, ... (each with frontmatter)
 
-# Chunks para stdout (JSON envelope)
+# Chunks to stdout (JSON envelope)
 faf dump --url https://long-article.com --format markdown --chunk-size 500
 # → { "frontmatter": "...", "chunks": [{ "index": 0, "tokens_est": 480, "content": "..." }] }
 ```
+
+If a page has no `og:url` tag, FAF falls back to the request URL — so frontmatter always contains the source URL.
 
 Whitespace collapse is always on: 3+ blank lines collapse to 1, trailing whitespace is stripped, and navigation-only URL lines with <3 useful chars are removed.
 
@@ -233,8 +331,13 @@ Whitespace collapse is always on: 3+ blank lines collapse to 1, trailing whitesp
 ```bash
 faf https://books.toscrape.com/ follow ".product_pod h3 a" \
   --extract "h3,.price_color" --max 10 --format csv
+```
 
-faf https://site.com follow "a" --max 5 --delay 1000 --random-delay 500 2000
+```
+title,price
+A Light in the Attic,£51.77
+Tipping the Velvet,£53.74
+...
 ```
 
 - `--extract` — CSS selectors to extract from each visited page
@@ -366,7 +469,7 @@ src/
 | CLI | `clap`, `serde`, `serde_json` |
 | Encoding | `base64`, `sha2`, `hex`, `regex` |
 
-**~10K LOC. 40 files. Zero non-Rust code.** The entire codebase fits in your head.
+**~12K LOC. 40 files. Zero non-Rust code.** The entire codebase fits in your head.
 
 ---
 
@@ -384,15 +487,14 @@ src/
 | **M5** — Page Interaction | Click, forms, watch mode, scroll simulation |
 | **M6** — Self-Contained Dump | CSS inlining, image-to-base64, URL resolution, script removal |
 | **M7** — LLM-Ready Output | Markdown conversion, readability extraction, structured data, text output |
-| **M8** — Polish & Robustness | Test fixes, stdout pipe support, profile optimization, docs |
+| **T001** — Markdown Optimization for AI | YAML frontmatter with OpenGraph, semantic whitespace compression, token-aware chunking, GFM table separators |
+| **T002** — Post-M7 Fixes | Double-parse elimination, LazyLock regexes, URL fallback in frontmatter |
 
-**329 tests. 0 failures.**
+**360 tests. 0 failures.**
 
 ### 🔮 What's next
 
 **MCP Server Native** ⚡ — Expose FAF as an MCP (Model Context Protocol) server. Claude Desktop, Cursor, and other AI agents call `faf fetch`, `faf dump`, and structured extraction directly from chat — no shell, no subprocess. One `faf-mcp` binary, thousands of devs already using AI tooling.
-
-**Markdown Optimization for AI** 🧠 — YAML frontmatter with OpenGraph metadata, semantic whitespace compression, and token-aware chunking. Output markdown optimized for LLM context windows — less tokens, more signal. ([#1](https://github.com/tiagoc93/faf-browser/issues/1))
 
 **Daemon Mode + REST API** 🌐 — Run `faf serve` as a background daemon exposing REST endpoints (`POST /fetch`, `POST /crawl`, `GET /dump`). Any language — Python, TypeScript, Go — consumes FAF without Rust bindings. Turns FAF from a CLI into local infrastructure.
 
@@ -405,10 +507,13 @@ src/
 | Scenario | Use |
 |----------|-----|
 | Simple scraping (HTTP GET → parse) | **FAF** |
-| Feed page content to LLMs (markdown, readability) | **FAF** |
+| Feed page content to LLMs (markdown, readability, frontmatter) | **FAF** |
+| Chunk long pages for context windows | **FAF** |
 | Crawl with rate-limiting and concurrency | **FAF** |
 | Run on low-resource VPS (5MB RAM) | **FAF** |
+| Offline / air-gapped environments | **FAF** |
 | Archive pages as self-contained HTML | **FAF** |
+| Privacy-sensitive scraping (no SaaS) | **FAF** |
 | Execute JS-dependent SPAs (React, Vue) | Playwright |
 | Bypass anti-bot detection | Playwright |
 | Pixel-perfect screenshots | Playwright |
@@ -421,7 +526,7 @@ src/
 ## Contributing
 
 ```bash
-cargo test    # 329 tests
+cargo test    # 360 tests
 cargo clippy
 cargo fmt
 ```
@@ -430,9 +535,12 @@ Conventional commits: `feat:`, `fix:`, `docs:`, `refactor:`, `chore:`.
 
 ---
 
-## ☕ Support
+## Support
 
-FAF is free, open-source, and will always be. If it saved you time or RAM, consider buying me a coffee — entirely optional, no expectations.
+<details>
+<summary><b>☕ Buy me a coffee (entirely optional)</b></summary>
+
+FAF is free, open-source, and will always be. If it saved you time or RAM, consider buying me a coffee — no expectations.
 
 **Pix (any amount):**
 
@@ -441,6 +549,8 @@ e4636446-8087-48b7-bca0-61481687fe27
 ```
 
 *This is a random Pix key — no personal data exposed.*
+
+</details>
 
 ---
 
