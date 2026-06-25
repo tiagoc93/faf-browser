@@ -24,7 +24,9 @@ fn convert_node(element: scraper::ElementRef, output: &mut String) {
     for child in element.children() {
         match child.value() {
             scraper::Node::Element(_el) => {
-                let Some(el) = scraper::ElementRef::wrap(child) else { continue };
+                let Some(el) = scraper::ElementRef::wrap(child) else {
+                    continue;
+                };
                 let tag = el.value().name().to_lowercase();
                 match tag.as_str() {
                     "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
@@ -52,9 +54,7 @@ fn convert_node(element: scraper::ElementRef, output: &mut String) {
                         convert_node(el, &mut content);
                         let trimmed = content.trim();
                         if !trimmed.is_empty() {
-                            if !href.is_empty()
-                                && !href.starts_with("javascript:")
-                            {
+                            if !href.is_empty() && !href.starts_with("javascript:") {
                                 output.push_str(&format!("[{}]({})", trimmed, href));
                             } else {
                                 output.push_str(trimmed);
@@ -137,7 +137,8 @@ fn convert_node(element: scraper::ElementRef, output: &mut String) {
                     "table" => {
                         convert_table(el, output);
                     }
-                    "script" | "style" | "nav" | "footer" | "noscript" | "header" | "aside" | "svg" | "canvas" | "iframe" => {}
+                    "script" | "style" | "nav" | "footer" | "noscript" | "header" | "aside"
+                    | "svg" | "canvas" | "iframe" => {}
                     _ => {
                         convert_node(el, output);
                     }
@@ -196,7 +197,7 @@ fn convert_table(element: scraper::ElementRef, output: &mut String) {
         return;
     }
 
-    for row in &rows {
+    for (ri, row) in rows.iter().enumerate() {
         output.push_str("| ");
         for i in 0..ncols {
             let cell = row.get(i).map(|s| s.as_str()).unwrap_or("");
@@ -204,15 +205,30 @@ fn convert_table(element: scraper::ElementRef, output: &mut String) {
             output.push_str(" | ");
         }
         output.push('\n');
+        // GFM separator after the header row (first row)
+        if ri == 0 {
+            output.push_str("| ");
+            for _ in 0..ncols {
+                output.push_str("--- | ");
+            }
+            output.push('\n');
+        }
     }
     output.push('\n');
 }
 
+/// Regexes compiled once via LazyLock (Rust 2024).
+use std::sync::LazyLock;
+
+static URL_SHORT_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"^https?://\S{0,3}$").unwrap());
+
+static BLANK_LINES_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"\n{3,}").unwrap());
+
 /// Collapse 3+ blank lines to exactly 1, strip trailing whitespace per line,
 /// and drop lines that are navigation-only URLs with <3 chars of useful text.
 pub fn collapse_whitespace(markdown: &str) -> String {
-    let url_re =
-        regex::Regex::new(r"^https?://\S{0,3}$").unwrap();
     let mut out_lines: Vec<String> = Vec::new();
     for line in markdown.lines() {
         let trimmed = line.trim_end();
@@ -220,27 +236,43 @@ pub fn collapse_whitespace(markdown: &str) -> String {
             out_lines.push(String::new());
             continue;
         }
-        if url_re.is_match(trimmed.trim()) {
+        if URL_SHORT_RE.is_match(trimmed.trim()) {
             continue;
         }
         out_lines.push(trimmed.to_string());
     }
     let joined = out_lines.join("\n");
-    let re = regex::Regex::new(r"\n{3,}").unwrap();
-    re.replace_all(&joined, "\n\n").trim().to_string()
+    BLANK_LINES_RE
+        .replace_all(&joined, "\n\n")
+        .trim()
+        .to_string()
 }
 
 /// Build a YAML frontmatter block from page metadata (OpenGraph, meta tags, title).
+/// `base_url` is used as fallback for the `url` field when `og:url` is absent.
 /// Returns an empty string when no useful metadata is found.
-pub fn inject_frontmatter(html: &str, markdown: &str) -> String {
+pub fn inject_frontmatter(html: &str, markdown: &str, base_url: &str) -> String {
     let data = extract_structured_data(html);
-    let meta = data.get("meta").and_then(|v| v.as_object()).cloned().unwrap_or_default();
-    let og = data.get("open_graph").and_then(|v| v.as_object()).cloned().unwrap_or_default();
-    let json_ld = data.get("json_ld").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let meta = data
+        .get("meta")
+        .and_then(|v| v.as_object())
+        .cloned()
+        .unwrap_or_default();
+    let og = data
+        .get("open_graph")
+        .and_then(|v| v.as_object())
+        .cloned()
+        .unwrap_or_default();
+    let json_ld = data
+        .get("json_ld")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
 
     let mut lines: Vec<String> = Vec::new();
 
-    let title = og.get("title")
+    let title = og
+        .get("title")
         .or_else(|| meta.get("title"))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
@@ -248,7 +280,8 @@ pub fn inject_frontmatter(html: &str, markdown: &str) -> String {
         lines.push(format!("title: {}", yaml_escape(&t)));
     }
 
-    if let Some(desc) = og.get("description")
+    if let Some(desc) = og
+        .get("description")
         .or_else(|| meta.get("description"))
         .and_then(|v| v.as_str())
     {
@@ -263,10 +296,20 @@ pub fn inject_frontmatter(html: &str, markdown: &str) -> String {
         }
     }
 
-    if let Some(url) = og.get("url").and_then(|v| v.as_str()) {
-        if !url.is_empty() {
-            lines.push(format!("url: {}", yaml_escape(url)));
-        }
+    let url_val: Option<String> = og
+        .get("url")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .or_else(|| {
+            if !base_url.is_empty() {
+                Some(base_url.to_string())
+            } else {
+                None
+            }
+        });
+    if let Some(url) = url_val {
+        lines.push(format!("url: {}", yaml_escape(&url)));
     }
 
     if let Some(author) = meta.get("author").and_then(|v| v.as_str()) {
@@ -275,7 +318,8 @@ pub fn inject_frontmatter(html: &str, markdown: &str) -> String {
         }
     }
 
-    if let Some(published) = og.get("published_time")
+    if let Some(published) = og
+        .get("published_time")
         .or_else(|| og.get("article:published_time"))
         .and_then(|v| v.as_str())
     {
@@ -291,7 +335,8 @@ pub fn inject_frontmatter(html: &str, markdown: &str) -> String {
     }
 
     if !json_ld.is_empty() {
-        let types: Vec<String> = json_ld.iter()
+        let types: Vec<String> = json_ld
+            .iter()
             .filter_map(|v| v.get("@type"))
             .filter_map(|t| t.as_str().map(|s| yaml_escape(s)))
             .collect();
@@ -317,7 +362,10 @@ fn yaml_escape(value: &str) -> String {
         || value.trim_start().starts_with('[')
         || value.trim_start().starts_with('{')
     {
-        let escaped = value.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', " ");
+        let escaped = value
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', " ");
         format!("\"{}\"", escaped)
     } else {
         value.replace('\n', " ").to_string()
@@ -390,7 +438,11 @@ pub fn chunk_markdown(markdown: &str, max_tokens: usize) -> String {
         .enumerate()
         .map(|(index, content)| {
             let tokens_est = content.chars().count().div_ceil(4);
-            Chunk { index, tokens_est, content: content.trim().to_string() }
+            Chunk {
+                index,
+                tokens_est,
+                content: content.trim().to_string(),
+            }
         })
         .collect();
 
@@ -483,14 +535,16 @@ mod tests {
 
     #[test]
     fn test_link_inside_paragraph() {
-        let html = r##"<html><body><p>Visit <a href="/about">About Us</a> today</p></body></html>"##;
+        let html =
+            r##"<html><body><p>Visit <a href="/about">About Us</a> today</p></body></html>"##;
         let result = html_to_markdown(html);
         assert!(result.contains("Visit [About Us](/about) today"));
     }
 
     #[test]
     fn test_nested_inline_formatting() {
-        let html = "<html><body><p>Text <strong>bold <em>italic</em> more</strong> end</p></body></html>";
+        let html =
+            "<html><body><p>Text <strong>bold <em>italic</em> more</strong> end</p></body></html>";
         let result = html_to_markdown(html);
         assert!(result.contains("Text **bold *italic* more** end"));
     }
@@ -584,7 +638,7 @@ mod tests {
     fn test_inject_frontmatter_with_og() {
         let html = r##"<html><head><title>Page</title><meta property="og:title" content="Hello"><meta property="og:description" content="Desc"></head><body><p>body</p></body></html>"##;
         let md = "# Hello\n\nbody";
-        let result = inject_frontmatter(html, md);
+        let result = inject_frontmatter(html, md, "");
         assert!(result.starts_with("---\n"));
         assert!(result.contains("title: Hello"));
         assert!(result.contains("description: Desc"));
@@ -594,15 +648,16 @@ mod tests {
     fn test_inject_frontmatter_no_metadata() {
         let html = "<html><body><p>just content</p></body></html>";
         let md = "# Just content";
-        let result = inject_frontmatter(html, md);
+        let result = inject_frontmatter(html, md, "");
         assert_eq!(result, "");
     }
 
     #[test]
     fn test_inject_frontmatter_partial_meta() {
-        let html = r##"<html><head><meta name="author" content="Alice"></head><body></body></html>"##;
+        let html =
+            r##"<html><head><meta name="author" content="Alice"></head><body></body></html>"##;
         let md = "content";
-        let result = inject_frontmatter(html, md);
+        let result = inject_frontmatter(html, md, "");
         assert!(result.contains("author: Alice"));
     }
 
@@ -635,7 +690,11 @@ mod tests {
         let result = chunk_markdown(&md, 50);
         let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
         let chunks = parsed["chunks"].as_array().unwrap();
-        assert!(chunks.len() >= 2, "expected multiple chunks, got {}", chunks.len());
+        assert!(
+            chunks.len() >= 2,
+            "expected multiple chunks, got {}",
+            chunks.len()
+        );
     }
 
     #[test]

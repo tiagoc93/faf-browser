@@ -4,7 +4,7 @@ use std::process::{Command, Stdio};
 use std::thread;
 
 use clap::Parser;
-use faf_browser::api::commands::{run, Cli};
+use faf_browser::api::commands::{Cli, run};
 
 fn start_server_with_html(html: &'static str) -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -31,8 +31,7 @@ fn faf_binary() -> std::path::PathBuf {
 
 #[test]
 fn test_stdin_mode() {
-    let html =
-        r#"<html><head><title>Stdin Test</title></head><body><h1>Hello</h1></body></html>"#;
+    let html = r#"<html><head><title>Stdin Test</title></head><body><h1>Hello</h1></body></html>"#;
     let port = start_server_with_html(html);
 
     let mut child = Command::new(faf_binary())
@@ -80,16 +79,11 @@ fn test_stdin_mode() {
 
 #[test]
 fn test_repl_mode() {
-    let html =
-        r#"<html><head><title>REPL Test</title></head><body><h1>World</h1></body></html>"#;
+    let html = r#"<html><head><title>REPL Test</title></head><body><h1>World</h1></body></html>"#;
     let port = start_server_with_html(html);
 
     let mut child = Command::new(faf_binary())
-        .args([
-            "repl",
-            "--url",
-            &format!("http://127.0.0.1:{}/", port),
-        ])
+        .args(["repl", "--url", &format!("http://127.0.0.1:{}/", port)])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -139,11 +133,7 @@ fn test_repl_json_toggle() {
     let port = start_server_with_html(html);
 
     let mut child = Command::new(faf_binary())
-        .args([
-            "repl",
-            "--url",
-            &format!("http://127.0.0.1:{}/", port),
-        ])
+        .args(["repl", "--url", &format!("http://127.0.0.1:{}/", port)])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -441,10 +431,7 @@ fn start_watch_changing_server() -> u16 {
             let mut buf = [0u8; 1024];
             let _ = stream.read(&mut buf);
             let count = c.fetch_add(1, Ordering::SeqCst);
-            let body = format!(
-                "<html><body><h1>Valor: {}</h1></body></html>",
-                count
-            );
+            let body = format!("<html><body><h1>Valor: {}</h1></body></html>", count);
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                 body.len(),

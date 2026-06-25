@@ -3,7 +3,7 @@ use std::net::TcpListener;
 use std::thread;
 
 use clap::Parser;
-use faf_browser::api::commands::{run, Cli};
+use faf_browser::api::commands::{Cli, run};
 
 fn start_server_with_html(html: &'static str) -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();

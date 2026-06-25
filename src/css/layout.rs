@@ -117,7 +117,7 @@ pub fn compute_box_model(style: &ComputedStyle, container_width: f32, font_size:
     let border_right = css_to_pixels(&style.border_right_width, container_width, font_size);
     let border_top = css_to_pixels(&style.border_top_width, container_width, font_size);
     let border_bottom = css_to_pixels(&style.border_bottom_width, container_width, font_size);
-    
+
     // M8.5: box-sizing: border-box — width includes padding and border
     let (width, height) = if style.box_sizing == "border-box" {
         (
@@ -127,7 +127,7 @@ pub fn compute_box_model(style: &ComputedStyle, container_width: f32, font_size:
     } else {
         (raw_width, raw_height)
     };
-    
+
     BoxModel {
         width,
         height,

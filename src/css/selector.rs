@@ -143,13 +143,13 @@ pub fn select_elements(doc: &HtmlDocument, selector_str: &str) -> Result<Vec<Ele
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
         .collect();
-    
+
     if cleaned.is_empty() {
         return Ok(Vec::new());
     }
-    
+
     let cleaned_selector = cleaned.join(", ");
-    
+
     let selector = Selector::parse(&cleaned_selector)
         .map_err(|e| anyhow::anyhow!("Invalid selector '{}': {:?}", cleaned_selector, e))?;
     let specificity = compute_specificity(selector_str);

@@ -125,7 +125,7 @@ pub fn compute_styles(
     // element_key -> list of (rule, specificity, rule_index_in_stylesheet)
     let mut element_rules: HashMap<ElementKey, Vec<(&Rule, u32, usize)>> = HashMap::new();
     let mut element_repr: HashMap<ElementKey, ElementMatch> = HashMap::new();
-    
+
     let mut total_rules = 0;
     let mut gt_rules = 0;
     let mut gt_matched = 0;
@@ -133,10 +133,14 @@ pub fn compute_styles(
     for (rule_idx, rule) in stylesheet.rules.iter().enumerate() {
         total_rules += 1;
         let has_gt = rule.selectors.contains('>');
-        if has_gt { gt_rules += 1; }
+        if has_gt {
+            gt_rules += 1;
+        }
         match select_elements(doc, &rule.selectors) {
             Ok(matches) => {
-                if has_gt && !matches.is_empty() { gt_matched += 1; }
+                if has_gt && !matches.is_empty() {
+                    gt_matched += 1;
+                }
                 for m in matches {
                     let key = (
                         m.tag.clone(),
@@ -171,7 +175,10 @@ pub fn compute_styles(
 
     log::info!(
         "CSS cascade: {} regras total, {} com '>', {} com '>' que casaram, {} elementos com estilo",
-        total_rules, gt_rules, gt_matched, results.len()
+        total_rules,
+        gt_rules,
+        gt_matched,
+        results.len()
     );
     results
 }

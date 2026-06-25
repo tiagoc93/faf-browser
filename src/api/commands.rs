@@ -891,20 +891,14 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 if config.chunk_size > 0 && (config.format == "markdown" || config.format == "md") {
                     crate::dump::write_chunked_output(&result_html, output_path)?;
                     if format == "json" {
-                        println!(
-                            "{}",
-                            serde_json::json!({"dump": output_path, "url": url})
-                        );
+                        println!("{}", serde_json::json!({"dump": output_path, "url": url}));
                     } else {
                         println!("💾 Chunks salvos em: {}", output_path);
                     }
                 } else {
                     crate::dump::write_to_file(&result_html, output_path)?;
                     if format == "json" {
-                        println!(
-                            "{}",
-                            serde_json::json!({"dump": output_path, "url": url})
-                        );
+                        println!("{}", serde_json::json!({"dump": output_path, "url": url}));
                     } else {
                         println!("💾 HTML salvo em: {}", output_path);
                     }

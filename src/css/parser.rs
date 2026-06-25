@@ -29,7 +29,11 @@ pub fn parse_css(css_text: &str) -> Result<Stylesheet> {
     let mut rules = Vec::new();
     let mut media_css = String::new();
     let chars: Vec<char> = css_text.chars().collect();
-    let byte_pos: Vec<usize> = css_text.char_indices().map(|(b, _)| b).chain(std::iter::once(css_text.len())).collect();
+    let byte_pos: Vec<usize> = css_text
+        .char_indices()
+        .map(|(b, _)| b)
+        .chain(std::iter::once(css_text.len()))
+        .collect();
     let slice = |s: usize, e: usize| -> &str {
         let bs = byte_pos[s.min(byte_pos.len().saturating_sub(1))];
         let be = byte_pos[e.min(byte_pos.len().saturating_sub(1))];
@@ -159,13 +163,21 @@ pub fn parse_css(css_text: &str) -> Result<Stylesheet> {
 /// M8.5: Extract inner CSS from @media rules that match our viewport.
 /// Returns (new_index, optional_inner_css).
 /// For now, extracts all @media screen rules (assumes desktop viewport >= 768px).
-fn extract_media_rules(chars: &[char], byte_pos: &[usize], mut i: usize, css_text: &str) -> Result<(usize, Option<String>)> {
+fn extract_media_rules(
+    chars: &[char],
+    byte_pos: &[usize],
+    mut i: usize,
+    css_text: &str,
+) -> Result<(usize, Option<String>)> {
     let start = i;
     while i < chars.len() && chars[i] != '{' && chars[i] != ';' {
         i += 1;
     }
-    let at_rule = css_text[byte_pos[start.min(byte_pos.len().saturating_sub(1))]..byte_pos[i.min(byte_pos.len().saturating_sub(1))]].trim().to_string();
-    
+    let at_rule = css_text[byte_pos[start.min(byte_pos.len().saturating_sub(1))]
+        ..byte_pos[i.min(byte_pos.len().saturating_sub(1))]]
+        .trim()
+        .to_string();
+
     if i < chars.len() && chars[i] == '{' {
         let mut depth = 1;
         let body_start = i + 1;
@@ -179,7 +191,7 @@ fn extract_media_rules(chars: &[char], byte_pos: &[usize], mut i: usize, css_tex
             i += 1;
         }
         let body_end = i - 1;
-        
+
         let at_lower = at_rule.to_lowercase();
         if !at_lower.starts_with("@media") {
             return Ok((i, None));
@@ -193,12 +205,14 @@ fn extract_media_rules(chars: &[char], byte_pos: &[usize], mut i: usize, css_tex
         }
         return Ok((i, None));
     }
-    
+
     // No body (like @import), skip to ;
     while i < chars.len() && chars[i] != ';' {
         i += 1;
     }
-    if i < chars.len() { i += 1; }
+    if i < chars.len() {
+        i += 1;
+    }
     Ok((i, None))
 }
 
@@ -293,28 +307,28 @@ pub async fn extract_page_stylesheets(
                         let css_text = resp.body;
                         if !css_text.trim().is_empty() {
                             css_sources.push(css_text);
-    #[test]
-    fn test_multibyte_char_in_selector() {
-        let css = "héllo { color: red; }";
-        let sheet = parse_css(css).unwrap();
-        assert_eq!(sheet.rules.len(), 1);
-        assert_eq!(sheet.rules[0].selectors, "héllo");
-    }
+                            #[test]
+                            fn test_multibyte_char_in_selector() {
+                                let css = "héllo { color: red; }";
+                                let sheet = parse_css(css).unwrap();
+                                assert_eq!(sheet.rules.len(), 1);
+                                assert_eq!(sheet.rules[0].selectors, "héllo");
+                            }
 
-    #[test]
-    fn test_multibyte_char_in_value() {
-        let css = "p { content: \"coração\"; }";
-        let sheet = parse_css(css).unwrap();
-        assert_eq!(sheet.rules[0].declarations[0].value, "\"coração\"");
-    }
+                            #[test]
+                            fn test_multibyte_char_in_value() {
+                                let css = "p { content: \"coração\"; }";
+                                let sheet = parse_css(css).unwrap();
+                                assert_eq!(sheet.rules[0].declarations[0].value, "\"coração\"");
+                            }
 
-    #[test]
-    fn test_multibyte_in_media() {
-        let css = "@media screen { .clássé { color: red; } }";
-        let sheet = parse_css(css).unwrap();
-        assert!(sheet.rules.iter().any(|r| r.selectors.contains("clássé")));
-    }
-}
+                            #[test]
+                            fn test_multibyte_in_media() {
+                                let css = "@media screen { .clássé { color: red; } }";
+                                let sheet = parse_css(css).unwrap();
+                                assert!(sheet.rules.iter().any(|r| r.selectors.contains("clássé")));
+                            }
+                        }
                     }
                     Err(err) => {
                         log::warn!("Falha ao baixar CSS '{}': {}", resolved_url, err);

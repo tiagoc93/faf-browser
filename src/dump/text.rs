@@ -17,10 +17,7 @@ fn find_body(document: &Html) -> Option<scraper::ElementRef<'_>> {
 }
 
 fn extract_all_text(document: &Html) -> String {
-    let text: String = document
-        .root_element()
-        .text()
-        .collect::<String>();
+    let text: String = document.root_element().text().collect::<String>();
     collapse_spacing(&text)
 }
 
@@ -28,11 +25,15 @@ fn convert_element(element: scraper::ElementRef, output: &mut String) {
     for child in element.children() {
         match child.value() {
             scraper::Node::Element(_el) => {
-                let Some(el) = scraper::ElementRef::wrap(child) else { continue };
+                let Some(el) = scraper::ElementRef::wrap(child) else {
+                    continue;
+                };
                 let tag = el.value().name().to_lowercase();
                 match tag.as_str() {
-                    "script" | "style" | "nav" | "footer" | "noscript" | "header" | "aside" | "svg" => {}
-                    "p" | "div" | "section" | "article" | "main" | "blockquote" | "figure" | "figcaption" | "details" => {
+                    "script" | "style" | "nav" | "footer" | "noscript" | "header" | "aside"
+                    | "svg" => {}
+                    "p" | "div" | "section" | "article" | "main" | "blockquote" | "figure"
+                    | "figcaption" | "details" => {
                         let before = output.len();
                         convert_children(el, output);
                         if output.len() > before && !output.ends_with("\n\n") {
@@ -63,7 +64,10 @@ fn convert_element(element: scraper::ElementRef, output: &mut String) {
                         let text: String = el.text().collect();
                         let trimmed = text.trim();
                         if !trimmed.is_empty() {
-                            if !href.is_empty() && !href.starts_with("javascript:") && !href.starts_with("#") {
+                            if !href.is_empty()
+                                && !href.starts_with("javascript:")
+                                && !href.starts_with("#")
+                            {
                                 output.push_str(&format!("{} ({})", trimmed, href));
                             } else {
                                 output.push_str(trimmed);
@@ -102,11 +106,16 @@ fn convert_children(element: scraper::ElementRef, output: &mut String) {
     for child in element.children() {
         match child.value() {
             scraper::Node::Element(_el) => {
-                let Some(el) = scraper::ElementRef::wrap(child) else { continue };
+                let Some(el) = scraper::ElementRef::wrap(child) else {
+                    continue;
+                };
                 let tag = el.value().name().to_lowercase();
                 match tag.as_str() {
-                    "script" | "style" | "nav" | "footer" | "noscript" | "header" | "aside" | "svg" => {}
-                    "br" => { output.push('\n'); }
+                    "script" | "style" | "nav" | "footer" | "noscript" | "header" | "aside"
+                    | "svg" => {}
+                    "br" => {
+                        output.push('\n');
+                    }
                     "li" => {
                         output.push_str("- ");
                         convert_children(el, output);
@@ -117,7 +126,10 @@ fn convert_children(element: scraper::ElementRef, output: &mut String) {
                         let text: String = el.text().collect();
                         let trimmed = text.trim();
                         if !trimmed.is_empty() {
-                            if !href.is_empty() && !href.starts_with("javascript:") && !href.starts_with("#") {
+                            if !href.is_empty()
+                                && !href.starts_with("javascript:")
+                                && !href.starts_with("#")
+                            {
                                 output.push_str(&format!("{} ({})", trimmed, href));
                             } else {
                                 output.push_str(trimmed);
@@ -126,9 +138,12 @@ fn convert_children(element: scraper::ElementRef, output: &mut String) {
                     }
                     "img" => {
                         let alt = el.value().attr("alt").unwrap_or("");
-                        if !alt.is_empty() { output.push_str(&format!("[{}]", alt)); }
+                        if !alt.is_empty() {
+                            output.push_str(&format!("[{}]", alt));
+                        }
                     }
-                    "strong" | "b" | "em" | "i" | "code" | "span" | "label" | "small" | "sub" | "sup" | "mark" | "time" | "abbr" => {
+                    "strong" | "b" | "em" | "i" | "code" | "span" | "label" | "small" | "sub"
+                    | "sup" | "mark" | "time" | "abbr" => {
                         convert_children(el, output);
                     }
                     _ => {

@@ -20,15 +20,16 @@ pub fn extract_main_content(html: &str) -> String {
     best_html
 }
 
-fn find_best_content(
-    element: scraper::ElementRef,
-    best_score: &mut f64,
-    best_html: &mut String,
-) {
+fn find_best_content(element: scraper::ElementRef, best_score: &mut f64, best_html: &mut String) {
     for child in element.children() {
         if let Some(el) = scraper::ElementRef::wrap(child) {
             let tag = el.value().name().to_lowercase();
-            if tag == "script" || tag == "style" || tag == "noscript" || tag == "svg" || tag == "canvas" {
+            if tag == "script"
+                || tag == "style"
+                || tag == "noscript"
+                || tag == "svg"
+                || tag == "canvas"
+            {
                 continue;
             }
 
@@ -87,7 +88,8 @@ fn score_content(element: scraper::ElementRef) -> f64 {
 
     if let Some(id) = element.value().id() {
         let id_lower = id.to_lowercase();
-        if id_lower.contains("main") || id_lower.contains("content") || id_lower.contains("article") {
+        if id_lower.contains("main") || id_lower.contains("content") || id_lower.contains("article")
+        {
             score *= 1.8;
         }
     }
@@ -98,8 +100,12 @@ fn score_content(element: scraper::ElementRef) -> f64 {
             .iter()
             .filter(|c| {
                 let cl = c.to_lowercase();
-                cl.contains("main") || cl.contains("content") || cl.contains("article") || cl.contains("post")
-                    || cl.contains("entry") || cl.contains("body")
+                cl.contains("main")
+                    || cl.contains("content")
+                    || cl.contains("article")
+                    || cl.contains("post")
+                    || cl.contains("entry")
+                    || cl.contains("body")
             })
             .copied()
             .collect();
@@ -135,7 +141,9 @@ fn count_stats_recursive(element: scraper::ElementRef, stats: &mut ContentStats)
     for child in element.children() {
         match child.value() {
             scraper::Node::Element(_el) => {
-                let Some(el) = scraper::ElementRef::wrap(child) else { continue };
+                let Some(el) = scraper::ElementRef::wrap(child) else {
+                    continue;
+                };
                 let tag = el.value().name().to_lowercase();
                 stats.tag_count += 1;
 
@@ -161,10 +169,29 @@ fn count_stats_recursive(element: scraper::ElementRef, stats: &mut ContentStats)
 
 fn is_noise_element(element: scraper::ElementRef) -> bool {
     let noise_patterns = [
-        "nav", "menu", "sidebar", "footer", "header", "ad", "advertisement",
-        "banner", "widget", "comment", "related", "social", "share", "cookie",
-        "popup", "modal", "overlay", "newsletter", "subscribe",
-        "alert", "warning", "disclaimer", "notice",
+        "nav",
+        "menu",
+        "sidebar",
+        "footer",
+        "header",
+        "ad",
+        "advertisement",
+        "banner",
+        "widget",
+        "comment",
+        "related",
+        "social",
+        "share",
+        "cookie",
+        "popup",
+        "modal",
+        "overlay",
+        "newsletter",
+        "subscribe",
+        "alert",
+        "warning",
+        "disclaimer",
+        "notice",
     ];
 
     if let Some(id) = element.value().id() {

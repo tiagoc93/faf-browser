@@ -3,7 +3,7 @@ use std::net::TcpListener;
 use std::thread;
 
 use clap::Parser;
-use faf_browser::api::commands::{run, Cli};
+use faf_browser::api::commands::{Cli, run};
 
 fn start_server(html: &'static str) -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -228,8 +228,7 @@ async fn test_structured_data_json_ld() {
 
 #[tokio::test]
 async fn test_structured_data_open_graph() {
-    let html =
-        r##"<html><head><meta property="og:title" content="OG Title"></head></html>"##;
+    let html = r##"<html><head><meta property="og:title" content="OG Title"></head></html>"##;
     let port = start_server(html);
     let output = output_path("sd_og");
 
@@ -255,8 +254,7 @@ async fn test_structured_data_open_graph() {
 
 #[tokio::test]
 async fn test_structured_data_meta() {
-    let html =
-        r##"<html><head><meta name="description" content="Meta desc"></head></html>"##;
+    let html = r##"<html><head><meta name="description" content="Meta desc"></head></html>"##;
     let port = start_server(html);
     let output = output_path("sd_meta");
 
@@ -335,15 +333,11 @@ async fn test_text_output_skips_nav() {
 
 fn minimal_png_bytes() -> Vec<u8> {
     vec![
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
-        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-        0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
-        0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41,
-        0x54, 0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
-        0x00, 0x00, 0x03, 0x00, 0x01, 0x1A, 0x72, 0x5C,
-        0xD4, 0x74, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
-        0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90,
+        0x77, 0x53, 0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0xF8,
+        0xCF, 0xC0, 0x00, 0x00, 0x00, 0x03, 0x00, 0x01, 0x1A, 0x72, 0x5C, 0xD4, 0x74, 0x00, 0x00,
+        0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
     ]
 }
 
@@ -455,9 +449,17 @@ async fn test_dump_markdown_with_frontmatter() {
     assert!(result.is_ok(), "dump should succeed: {:?}", result);
 
     let saved = std::fs::read_to_string(&output).unwrap();
-    assert!(saved.starts_with("---\n"), "expected frontmatter, got: {}", &saved[..saved.len().min(200)]);
+    assert!(
+        saved.starts_with("---\n"),
+        "expected frontmatter, got: {}",
+        &saved[..saved.len().min(200)]
+    );
     assert!(saved.contains("title: Hello World"), "got: {}", saved);
-    assert!(saved.contains("description: A description"), "got: {}", saved);
+    assert!(
+        saved.contains("description: A description"),
+        "got: {}",
+        saved
+    );
     assert!(saved.contains("site_name: ExampleSite"), "got: {}", saved);
     // markdown body still present
     assert!(saved.contains("# Hello World"), "got: {}", saved);
@@ -467,7 +469,8 @@ async fn test_dump_markdown_with_frontmatter() {
 #[tokio::test]
 async fn test_dump_markdown_whitespace_collapse() {
     // HTML with many empty paragraphs to force blank lines
-    let html = "<html><body><h1>Title</h1><p>one</p><p></p><p></p><p></p><p></p><p>two</p></body></html>";
+    let html =
+        "<html><body><h1>Title</h1><p>one</p><p></p><p></p><p></p><p></p><p>two</p></body></html>";
     let port = start_server(html);
     let output = output_path("md_whitespace");
 
@@ -524,8 +527,15 @@ async fn test_dump_markdown_chunk_size() {
     let chunk1 = format!("/tmp/faf_test_m7_md_chunk_{}_01.md", std::process::id());
     let chunk2 = format!("/tmp/faf_test_m7_md_chunk_{}_02.md", std::process::id());
     let saved = std::fs::read_to_string(&chunk1).expect("chunk_01 should exist");
-    assert!(saved.contains("Section"), "got: {}", &saved[..saved.len().min(200)]);
-    assert!(std::path::Path::new(&chunk2).exists(), "expected at least 2 chunks");
+    assert!(
+        saved.contains("Section"),
+        "got: {}",
+        &saved[..saved.len().min(200)]
+    );
+    assert!(
+        std::path::Path::new(&chunk2).exists(),
+        "expected at least 2 chunks"
+    );
     let _ = std::fs::remove_file(&chunk1);
     let _ = std::fs::remove_file(&chunk2);
     let _ = std::fs::remove_file(&output_md);
@@ -568,9 +578,20 @@ async fn test_dump_markdown_chunk_with_frontmatter() {
     let chunk1 = format!("/tmp/faf_test_m7_md_chunk_fm_{}_01.md", std::process::id());
     let chunk2 = format!("/tmp/faf_test_m7_md_chunk_fm_{}_02.md", std::process::id());
     let saved = std::fs::read_to_string(&chunk1).expect("chunk_01 should exist");
-    assert!(saved.starts_with("---\n"), "expected frontmatter in chunk, got: {}", &saved[..saved.len().min(200)]);
-    assert!(saved.contains("title: Chunked Page"), "got: {}", &saved[..saved.len().min(300)]);
-    assert!(std::path::Path::new(&chunk2).exists(), "expected at least 2 chunks");
+    assert!(
+        saved.starts_with("---\n"),
+        "expected frontmatter in chunk, got: {}",
+        &saved[..saved.len().min(200)]
+    );
+    assert!(
+        saved.contains("title: Chunked Page"),
+        "got: {}",
+        &saved[..saved.len().min(300)]
+    );
+    assert!(
+        std::path::Path::new(&chunk2).exists(),
+        "expected at least 2 chunks"
+    );
     let _ = std::fs::remove_file(&chunk1);
     let _ = std::fs::remove_file(&chunk2);
     let _ = std::fs::remove_file(&output_md);

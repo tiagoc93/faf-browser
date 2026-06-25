@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use base64::Engine;
 use crate::dump::url_resolver::resolve_url;
+use base64::Engine;
 
 pub fn inline_images(html: &str, base_url: &str) -> String {
     let img_re = regex::Regex::new(r#"<img\b[^>]*?/?>"#).unwrap();

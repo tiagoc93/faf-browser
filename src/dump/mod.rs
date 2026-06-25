@@ -11,7 +11,9 @@ use std::path::Path;
 
 use crate::dump::css_inline::inline_css;
 use crate::dump::image_inline::inline_images;
-use crate::dump::markdown::{chunk_markdown, collapse_whitespace, html_to_markdown, inject_frontmatter};
+use crate::dump::markdown::{
+    chunk_markdown, collapse_whitespace, html_to_markdown, inject_frontmatter,
+};
 use crate::dump::readability::extract_main_content;
 use crate::dump::structured_data::extract_structured_data;
 use crate::dump::text::html_to_text;
@@ -82,23 +84,28 @@ pub fn dump_to_string(html: &str, config: &DumpConfig) -> anyhow::Result<String>
             log::info!("Convertendo para Markdown...");
             let original_html = html;
             result = html_to_markdown(&result);
-            if config.frontmatter {
-                let with_fm = inject_frontmatter(original_html, &result);
+            // Extract frontmatter once; reuse for both non-chunked and chunked output.
+            let fm_string = if config.frontmatter {
+                let with_fm = inject_frontmatter(original_html, &result, &config.base_url);
                 if !with_fm.is_empty() {
-                    result = with_fm;
+                    extract_frontmatter_block(&with_fm)
+                } else {
+                    String::new()
                 }
-            }
+            } else {
+                String::new()
+            };
             result = collapse_whitespace(&result);
             if config.chunk_size > 0 {
                 let chunks_json = chunk_markdown(&result, config.chunk_size);
-                result = if config.frontmatter {
-                    let fm = inject_frontmatter(original_html, "");
-                    // inject_frontmatter returns "" + markdown; we want just the YAML block
-                    let fm_only = extract_frontmatter_block(&fm);
-                    wrap_chunks_with_frontmatter(&chunks_json, &fm_only)
+                result = if !fm_string.is_empty() {
+                    wrap_chunks_with_frontmatter(&chunks_json, &fm_string)
                 } else {
                     chunks_json
                 };
+            } else if !fm_string.is_empty() {
+                // Non-chunked: prepend frontmatter to markdown
+                result = format!("{}\n\n{}", fm_string, result);
             }
         }
         "text" | "txt" => {
@@ -163,11 +170,17 @@ pub fn write_chunked_output(content: &str, output_path: &str) -> anyhow::Result<
 
     let path = Path::new(output_path);
     let parent = path.parent().filter(|p| !p.as_os_str().is_empty());
-    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("output");
     let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("md");
     let dir = parent.map(|p| p.to_path_buf()).unwrap_or_default();
 
-    let frontmatter = parsed.get("frontmatter").and_then(|v| v.as_str()).unwrap_or("");
+    let frontmatter = parsed
+        .get("frontmatter")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
 
     let chunks = match parsed.get("chunks").and_then(|v| v.as_array()) {
         Some(c) => c,
@@ -185,7 +198,12 @@ pub fn write_chunked_output(content: &str, output_path: &str) -> anyhow::Result<
         let path = dir.join(&name);
         let len = combined.len();
         fs::write(&path, combined)?;
-        log::info!("Chunk {} salvo em {} ({} bytes)", i + 1, path.display(), len);
+        log::info!(
+            "Chunk {} salvo em {} ({} bytes)",
+            i + 1,
+            path.display(),
+            len
+        );
     }
     Ok(())
 }
@@ -276,8 +294,7 @@ mod tests {
 
     #[test]
     fn test_remove_scripts_removes_onclick() {
-        let html =
-            r##"<html><body><button onclick="doSomething()">Click</button></body></html>"##;
+        let html = r##"<html><body><button onclick="doSomething()">Click</button></body></html>"##;
         let result = remove_scripts(html);
         assert!(!result.contains("onclick"));
         assert!(result.contains("<button"));

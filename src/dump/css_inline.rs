@@ -3,9 +3,7 @@ use std::collections::HashMap;
 use crate::dump::url_resolver::resolve_url;
 
 pub fn inline_css(html: &str, base_url: &str) -> String {
-    let re = regex::Regex::new(
-        r#"<link\b[^>]*?\brel\s*=\s*["']stylesheet["'][^>]*?/?>"#
-    ).unwrap();
+    let re = regex::Regex::new(r#"<link\b[^>]*?\brel\s*=\s*["']stylesheet["'][^>]*?/?>"#).unwrap();
 
     let href_re = regex::Regex::new(r#"href\s*=\s*["']([^"']+)["']"#).unwrap();
 
@@ -32,10 +30,7 @@ pub fn inline_css(html: &str, base_url: &str) -> String {
 
         let replacement = match css_content {
             Some(css) => {
-                let css_clean = css
-                    .replace("@charset", "/* @charset */")
-                    .trim()
-                    .to_string();
+                let css_clean = css.replace("@charset", "/* @charset */").trim().to_string();
                 format!("\n<style>\n{}\n</style>\n", css_clean)
             }
             None => {
@@ -63,12 +58,10 @@ fn download_css(url: &str) -> Option<String> {
 
 fn download_css_sync(url: &str) -> Option<String> {
     match reqwest::blocking::get(url) {
-        Ok(resp) if resp.status().is_success() => {
-            resp.text().ok().map(|text| {
-                log::info!("CSS baixado: {} bytes de {}", text.len(), url);
-                resolve_css_urls(&text, url)
-            })
-        }
+        Ok(resp) if resp.status().is_success() => resp.text().ok().map(|text| {
+            log::info!("CSS baixado: {} bytes de {}", text.len(), url);
+            resolve_css_urls(&text, url)
+        }),
         Ok(resp) => {
             log::warn!("HTTP {} ao baixar CSS: {}", resp.status(), url);
             None

@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 pub fn extract_structured_data(html: &str) -> Value {
     let document = scraper::Html::parse_document(html);
